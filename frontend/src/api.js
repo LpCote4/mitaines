@@ -1,5 +1,5 @@
 const SESSION_KEY = 'mitaines_session';
-const API_BASE = '/mitaines';
+const API_BASE = '';
 
 export function getToken() {
   return localStorage.getItem(SESSION_KEY);
