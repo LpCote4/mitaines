@@ -90,6 +90,28 @@ export default function HomeScreen() {
     }
   }
 
+  const handleTestNotif = () => {
+    if (Notification.permission !== 'granted') return
+    const reg = navigator.serviceWorker.controller
+    if (reg) {
+      navigator.serviceWorker.ready.then((r) =>
+        r.showNotification('🧤 Mitaines', {
+          body: 'Est-ce que tu ronges là?',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: 'mitaines-test',
+          requireInteraction: true,
+          actions: [
+            { action: 'clean', title: '✅ Clean' },
+            { action: 'biting', title: '😬 Je ronge' },
+          ],
+        })
+      )
+    } else {
+      new Notification('🧤 Mitaines', { body: 'Est-ce que tu ronges là?', icon: '/icon-192.png' })
+    }
+  }
+
   const goal = summary?.laptop_goal_days || 90
   const streak = summary?.current_streak || 0
 
@@ -111,6 +133,25 @@ export default function HomeScreen() {
           </div>
           <span style={{ color: 'var(--warning)' }}>›</span>
         </div>
+      )}
+
+      {pushState === 'granted' && (
+        <button
+          onClick={handleTestNotif}
+          style={{
+            background: 'none',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-2)',
+            fontSize: '0.8rem',
+            padding: '6px 12px',
+            cursor: 'pointer',
+            marginBottom: 8,
+            alignSelf: 'flex-end',
+          }}
+        >
+          🔔 Tester notif
+        </button>
       )}
 
       {feedbackMsg && (
