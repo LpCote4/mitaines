@@ -20,11 +20,16 @@ export default function PinGate({ onAuth }) {
 
     if (next.length === 4) {
       setChecking(true)
-      const ok = await verifyPin(next.join(''))
-      if (ok) {
-        onAuth()
-      } else {
-        setError('PIN incorrect')
+      try {
+        const ok = await verifyPin(next.join(''))
+        if (ok) {
+          onAuth()
+        } else {
+          setError('PIN incorrect')
+          setDigits([])
+        }
+      } catch {
+        setError('Erreur serveur, réessaie')
         setDigits([])
       }
       setChecking(false)

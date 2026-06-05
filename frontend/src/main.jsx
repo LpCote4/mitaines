@@ -5,7 +5,7 @@ import './styles.css'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch(() => {})
+    navigator.serviceWorker.register('/mitaines/service-worker.js', { scope: '/mitaines/' }).catch(() => {})
   })
 }
 

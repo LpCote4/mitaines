@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mitaines-v2';
-const STATIC_ASSETS = ['/', '/index.html'];
+const CACHE_NAME = 'mitaines-v3';
+const STATIC_ASSETS = ['/mitaines/', '/mitaines/index.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -36,8 +36,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body || 'Est-ce que tu ronges là?',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
+    icon: '/mitaines/icon-192.png',
+    badge: '/mitaines/icon-192.png',
     tag: data.tag || 'mitaines-check',
     requireInteraction: data.requireInteraction ?? true,
     data: data.data || {},
@@ -62,7 +62,7 @@ self.addEventListener('notificationclick', (event) => {
 
   const logCheckin = (biting) => {
     if (!token) return Promise.resolve();
-    return fetch('/api/v1/checkins', {
+    return fetch('/mitaines/api/v1/checkins', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -84,7 +84,7 @@ self.addEventListener('notificationclick', (event) => {
           if (clientList.length > 0) {
             return clientList[0].focus();
           }
-          return clients.openWindow('/');
+          return clients.openWindow('/mitaines/');
         })
     );
   }
