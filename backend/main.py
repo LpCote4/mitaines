@@ -362,13 +362,6 @@ async def update_settings(data: SettingsUpdate, _=Depends(require_auth)):
 
 # ── Push test ─────────────────────────────────────────────────────────────────
 
-@app.post("/api/v1/push/test")
-async def test_push(_=Depends(require_auth)):
-    import asyncio
-    asyncio.create_task(scheduler_module.send_test_push_delayed(3))
-    return {"ok": True, "delay_seconds": 3}
-
-
 @app.post("/api/v1/push/ping-now")
 async def ping_now(_=Depends(require_auth)):
     import asyncio

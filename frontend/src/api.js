@@ -177,10 +177,6 @@ export function unsubscribePush(endpoint) {
   return req('DELETE', '/api/v1/push/unsubscribe', { endpoint });
 }
 
-export function testPushDelayed() {
-  return req('POST', '/api/v1/push/test');
-}
-
 export function pingNow() {
   return req('POST', '/api/v1/push/ping-now');
 }

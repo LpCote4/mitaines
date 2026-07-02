@@ -65,16 +65,6 @@ async def send_ping(pin_hash: str = "") -> None:
     )
 
 
-async def send_test_ping(pin_hash: str = "") -> None:
-    await _send(
-        title="🧤 Mitaines — Test",
-        body="Est-ce que tu ronges là? (test)",
-        tags=["nail_care", "test_tube"],
-        priority="default",
-        actions=_ping_actions(),
-    )
-
-
 async def send_weekly_summary(biting_count: int, urges_caught: int, worst_context: str | None) -> None:
     if biting_count == 0:
         body = f"Semaine parfaite! 0 rongement. {urges_caught} envies résistées. Incroyable! 🎉"

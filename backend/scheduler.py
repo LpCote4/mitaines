@@ -108,18 +108,9 @@ async def send_ping_notification():
     logger.info(f"Ping sent at {now}")
 
 
-async def send_real_ping_delayed(delay_seconds: int = 5):
+async def send_real_ping_delayed(delay_seconds: int = 15):
     await asyncio.sleep(delay_seconds)
     await send_ping_notification()
-
-
-async def send_test_push_delayed(delay_seconds: int = 5):
-    await asyncio.sleep(delay_seconds)
-    today = date.today().isoformat()
-    now = datetime.utcnow().isoformat()
-    await db.add_ping(today, now)
-    await notifier.send_test_ping(PIN_HASH)
-    logger.info(f"Test ping sent (delayed {delay_seconds}s)")
 
 
 async def send_weekly_summary():

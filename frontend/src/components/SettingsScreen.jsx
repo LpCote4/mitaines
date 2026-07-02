@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { getSettings, updateSettings, testPushDelayed, pingNow } from '../api'
+import { getSettings, updateSettings, pingNow } from '../api'
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState(null)
   const [pingsPerDay, setPingsPerDay] = useState(null)
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState(null)
-  const [testCountdown, setTestCountdown] = useState(null)
   const [pingCountdown, setPingCountdown] = useState(null)
   const debounceRef = useRef(null)
 
@@ -47,20 +46,6 @@ export default function SettingsScreen() {
     setPingCountdown(delay)
     const interval = setInterval(() => {
       setPingCountdown((prev) => {
-        if (prev <= 1) { clearInterval(interval); return null }
-        return prev - 1
-      })
-    }, 1000)
-  }
-
-  const handleTestPing = async () => {
-    if (testCountdown !== null) return
-    const result = await testPushDelayed()
-    const delay = result?.delay_seconds
-    if (!delay) return
-    setTestCountdown(delay)
-    const interval = setInterval(() => {
-      setTestCountdown((prev) => {
         if (prev <= 1) { clearInterval(interval); return null }
         return prev - 1
       })
@@ -128,37 +113,18 @@ export default function SettingsScreen() {
 
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="section-title">Test</div>
-
         <button
           className="btn btn-ghost"
           onClick={handlePingNow}
           style={{
             width: '100%',
-            marginBottom: 10,
             border: pingCountdown !== null ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border)',
             pointerEvents: pingCountdown !== null ? 'none' : 'auto',
             background: pingCountdown !== null ? 'var(--success-dim)' : 'var(--surface)',
             color: pingCountdown !== null ? 'var(--success)' : 'var(--text)',
           }}
         >
-          {pingCountdown !== null ? `⏱ Ping dans ${pingCountdown}s… (15 min pour répondre)` : '🧤 Envoyer un vrai ping'}
-        </button>
-
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: 12 }}>
-          Envoie une notification ntfy de test dans quelques secondes.
-        </p>
-        <button
-          className="btn btn-ghost"
-          onClick={handleTestPing}
-          style={{
-            width: '100%',
-            border: testCountdown !== null ? '1px solid rgba(124,58,237,0.3)' : '1px solid var(--border)',
-            pointerEvents: testCountdown !== null ? 'none' : 'auto',
-            background: testCountdown !== null ? 'var(--primary-dim)' : 'var(--surface)',
-            color: testCountdown !== null ? 'var(--primary-light)' : 'var(--text)',
-          }}
-        >
-          {testCountdown !== null ? `⏱ Notification dans ${testCountdown}s…` : '🔔 Envoyer une notification test'}
+          {pingCountdown !== null ? `⏱ Ping dans ${pingCountdown}s… (15 min pour répondre)` : '🧤 Envoyer un ping'}
         </button>
       </div>
 
