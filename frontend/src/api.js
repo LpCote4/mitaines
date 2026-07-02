@@ -177,6 +177,14 @@ export function unsubscribePush(endpoint) {
   return req('DELETE', '/api/v1/push/unsubscribe', { endpoint });
 }
 
+export function testPushDelayed() {
+  return req('POST', '/api/v1/push/test');
+}
+
+export function pingNow() {
+  return req('POST', '/api/v1/push/ping-now');
+}
+
 export async function registerPush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
@@ -197,6 +205,16 @@ export async function registerPush() {
 
   await subscribePush(subscription);
   return true;
+}
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+export function getSettings() {
+  return req('GET', '/api/v1/settings');
+}
+
+export function updateSettings(data) {
+  return req('PATCH', '/api/v1/settings', data);
 }
 
 function urlBase64ToUint8Array(base64String) {

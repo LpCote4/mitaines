@@ -5,7 +5,11 @@ import './styles.css'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch(() => {})
+    navigator.serviceWorker.register(import.meta.env.BASE_URL + 'service-worker.js').catch(() => {})
+  })
+  // Quand un nouveau SW prend le contrôle, recharger pour avoir le nouveau code
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload()
   })
 }
 

@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS milestones (
     unlocked_at TEXT NOT NULL,
     shown INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -126,6 +131,17 @@ async def add_ping(date_str: str, sent_at: str):
         await db.commit()
 
 
+async def get_latest_ping_since(since_iso: str) -> Optional[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM ping_log WHERE sent_at >= ? ORDER BY sent_at DESC LIMIT 1",
+            (since_iso,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+
 async def get_pings_for_date(date_str: str) -> list:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -192,4 +208,20 @@ async def unlock_milestone(key: str, unlocked_at: str):
 async def mark_milestone_shown(key: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE milestones SET shown = 1 WHERE key = ?", (key,))
+        await db.commit()
+
+
+async def get_setting(key: str) -> Optional[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
+async def set_setting(key: str, value: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
         await db.commit()

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { postEvening } from '../api'
 
 const CONTEXTS = [
@@ -16,6 +17,7 @@ export default function EveningModal({ onClose }) {
   const [context, setContext] = useState(null)
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
+  const touchStartY = useRef(null)
 
   const save = async () => {
     if (intensity === 0) return
@@ -25,10 +27,29 @@ export default function EveningModal({ onClose }) {
     onClose()
   }
 
-  return (
+  const handleTouchStart = (e) => {
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchMove = (e) => {
+    if (touchStartY.current === null) return
+    if (e.touches[0].clientY - touchStartY.current > 80) {
+      touchStartY.current = null
+      onClose()
+    }
+  }
+
+  return createPortal(
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-handle" />
+        <div
+          className="modal-top"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+        >
+          <div className="modal-handle" />
+          <button className="modal-close-btn" onClick={onClose} aria-label="Fermer">✕</button>
+        </div>
         <h2>🌙 Bilan du soir</h2>
 
         <div className="section-title">Intensité aujourd'hui</div>
@@ -81,6 +102,7 @@ export default function EveningModal({ onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'mitaines-v4';
-const STATIC_ASSETS = ['/', '/index.html'];
+const CACHE_NAME = 'mitaines-v5';
+const STATIC_ASSETS = ['/mitaines/', '/mitaines/index.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -19,6 +19,25 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.url.includes('/api/')) return;
+
+  const url = new URL(event.request.url);
+  const isHTML = url.pathname.endsWith('/') || url.pathname.endsWith('.html') || !url.pathname.includes('.');
+
+  if (isHTML) {
+    // Network-first pour HTML — garantit qu'on a toujours la dernière version
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-first pour les assets (Vite les hash par contenu, donc safe)
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );
@@ -84,7 +103,7 @@ self.addEventListener('notificationclick', (event) => {
           if (clientList.length > 0) {
             return clientList[0].focus();
           }
-          return clients.openWindow('/');
+          return clients.openWindow('/mitaines/');
         })
     );
   }

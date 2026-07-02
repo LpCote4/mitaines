@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 import random
@@ -9,17 +8,15 @@ from typing import List
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from pywebpush import WebPushException, webpush
 
 import db
 import insights as insights_module
+import notifier
 
 logger = logging.getLogger(__name__)
 
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
-VAPID_EMAIL = os.getenv("VAPID_EMAIL", "mailto:admin@example.com")
 PIN_HASH = os.getenv("PIN_HASH", "")
-PINGS_PER_DAY = int(os.getenv("PINGS_PER_DAY", "5"))
+PINGS_PER_DAY_DEFAULT = int(os.getenv("PINGS_PER_DAY", "5"))
 
 scheduler = AsyncIOScheduler()
 
@@ -82,8 +79,11 @@ async def schedule_daily_pings():
         if job.id.startswith(f"ping_{today_str}"):
             job.remove()
 
+    pings_per_day_str = await db.get_setting("pings_per_day")
+    pings_per_day = int(pings_per_day_str) if pings_per_day_str else PINGS_PER_DAY_DEFAULT
+
     weights = await get_hour_weights()
-    ping_times = generate_ping_times(PINGS_PER_DAY, weights)
+    ping_times = generate_ping_times(pings_per_day, weights)
 
     now = datetime.now()
     for t in ping_times:
@@ -100,67 +100,33 @@ async def schedule_daily_pings():
     logger.info(f"Scheduled {len(ping_times)} pings for {today_str}: {ping_times}")
 
 
-async def send_push_to_all(payload: dict):
-    subscriptions = await db.get_all_subscriptions()
-    if not subscriptions:
-        return
-
-    for sub in subscriptions:
-        try:
-            webpush(
-                subscription_info={
-                    "endpoint": sub["endpoint"],
-                    "keys": {"p256dh": sub["keys_p256dh"], "auth": sub["keys_auth"]},
-                },
-                data=json.dumps(payload),
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_EMAIL},
-            )
-        except WebPushException as e:
-            logger.warning(f"Push failed for {sub['endpoint'][:40]}…: {e}")
-            if e.response and e.response.status_code in (404, 410):
-                await db.delete_subscription(sub["endpoint"])
-        except Exception as e:
-            logger.error(f"Unexpected push error: {e}")
-
-
 async def send_ping_notification():
     now = datetime.utcnow().isoformat()
     today = date.today().isoformat()
     await db.add_ping(today, now)
-
-    payload = {
-        "title": "🧤 Mitaines",
-        "body": "Est-ce que tu ronges là?",
-        "tag": "mitaines-check",
-        "requireInteraction": True,
-        "actions": [
-            {"action": "clean", "title": "✅ Clean"},
-            {"action": "biting", "title": "😬 Je ronge"},
-        ],
-        "data": {"token": PIN_HASH, "type": "ping"},
-    }
-    await send_push_to_all(payload)
+    await notifier.send_ping(PIN_HASH)
     logger.info(f"Ping sent at {now}")
+
+
+async def send_real_ping_delayed(delay_seconds: int = 5):
+    await asyncio.sleep(delay_seconds)
+    await send_ping_notification()
+
+
+async def send_test_push_delayed(delay_seconds: int = 5):
+    await asyncio.sleep(delay_seconds)
+    today = date.today().isoformat()
+    now = datetime.utcnow().isoformat()
+    await db.add_ping(today, now)
+    await notifier.send_test_ping(PIN_HASH)
+    logger.info(f"Test ping sent (delayed {delay_seconds}s)")
 
 
 async def send_weekly_summary():
     summary = await insights_module.generate_weekly_summary()
-
-    count = summary["biting_count"]
-    urges = summary["urges_caught"]
-    ctx = summary.get("worst_context") or "?"
-
-    if count == 0:
-        body = f"Semaine parfaite! 0 rongement. {urges} envies résistées. Incroyable! 🎉"
-    else:
-        body = f"Cette semaine: {count} rongements, {urges} envies résistées. Contexte dominant: {ctx}."
-
-    payload = {
-        "title": "🧤 Bilan de la semaine",
-        "body": body,
-        "tag": "mitaines-weekly",
-        "data": {"type": "weekly"},
-    }
-    await send_push_to_all(payload)
+    await notifier.send_weekly_summary(
+        biting_count=summary["biting_count"],
+        urges_caught=summary["urges_caught"],
+        worst_context=summary.get("worst_context"),
+    )
     logger.info("Weekly summary sent")

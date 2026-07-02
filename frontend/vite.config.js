@@ -11,6 +11,7 @@ export default defineConfig({
       },
     },
   },
+  base: '/mitaines/',
   build: {
     outDir: 'dist',
   },

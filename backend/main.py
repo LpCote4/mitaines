@@ -28,6 +28,7 @@ app.add_middleware(
 PIN_HASH = os.getenv("PIN_HASH", "")
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 LAPTOP_GOAL_DAYS = int(os.getenv("LAPTOP_GOAL_DAYS", "90"))
+PINGS_PER_DAY_DEFAULT = int(os.getenv("PINGS_PER_DAY", "5"))
 
 MILESTONE_DEFS = [
     ("first_clean_day", "Premier jour clean"),
@@ -82,8 +83,16 @@ class CheckinCreate(BaseModel):
 
 @app.post("/api/v1/checkins")
 async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
-    now = datetime.utcnow().isoformat()
-    await db.add_checkin(now, data.biting, data.context, data.type)
+    now = datetime.utcnow()
+    now_iso = now.isoformat()
+
+    checkin_type = data.type
+    if checkin_type != "urge":
+        cutoff = (now - timedelta(minutes=15)).isoformat()
+        if await db.get_latest_ping_since(cutoff):
+            checkin_type = "ping_response"
+
+    await db.add_checkin(now_iso, data.biting, data.context, checkin_type)
     await check_and_unlock_milestones()
     return {"ok": True}
 
@@ -132,6 +141,7 @@ async def get_summary(_=Depends(require_auth)):
     today_checkins = [c for c in all_checkins if c["timestamp"].startswith(today_str)]
     today_biting = sum(1 for c in today_checkins if c["biting"])
     today_urges = sum(1 for c in today_checkins if c["type"] == "urge")
+    today_ping_responses = sum(1 for c in today_checkins if c["type"] == "ping_response")
 
     today_pings = await db.get_pings_for_date(today_str)
 
@@ -141,7 +151,7 @@ async def get_summary(_=Depends(require_auth)):
         "laptop_goal_days": LAPTOP_GOAL_DAYS,
         "today_biting": today_biting,
         "today_urges": today_urges,
-        "today_responses": len(today_checkins),
+        "today_responses": today_ping_responses,
         "today_pings": len(today_pings),
     }
 
@@ -322,6 +332,50 @@ async def unsubscribe_push(data: UnsubscribeRequest, _=Depends(require_auth)):
     return {"ok": True}
 
 
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/settings")
+async def get_settings(_=Depends(require_auth)):
+    pings_per_day_str = await db.get_setting("pings_per_day")
+    pings_per_day = int(pings_per_day_str) if pings_per_day_str else PINGS_PER_DAY_DEFAULT
+    return {
+        "pings_per_day": pings_per_day,
+        "pings_per_day_default": PINGS_PER_DAY_DEFAULT,
+        "laptop_goal_days": LAPTOP_GOAL_DAYS,
+        "push_configured": bool(VAPID_PUBLIC_KEY),
+    }
+
+
+class SettingsUpdate(BaseModel):
+    pings_per_day: Optional[int] = None
+
+
+@app.patch("/api/v1/settings")
+async def update_settings(data: SettingsUpdate, _=Depends(require_auth)):
+    if data.pings_per_day is not None:
+        if not (1 <= data.pings_per_day <= 20):
+            raise HTTPException(status_code=400, detail="pings_per_day must be between 1 and 20")
+        await db.set_setting("pings_per_day", str(data.pings_per_day))
+        await scheduler_module.schedule_daily_pings()
+    return {"ok": True}
+
+
+# ── Push test ─────────────────────────────────────────────────────────────────
+
+@app.post("/api/v1/push/test")
+async def test_push(_=Depends(require_auth)):
+    import asyncio
+    asyncio.create_task(scheduler_module.send_test_push_delayed(3))
+    return {"ok": True, "delay_seconds": 3}
+
+
+@app.post("/api/v1/push/ping-now")
+async def ping_now(_=Depends(require_auth)):
+    import asyncio
+    asyncio.create_task(scheduler_module.send_real_ping_delayed(5))
+    return {"ok": True, "delay_seconds": 5}
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/export")
@@ -341,47 +395,46 @@ async def export_data(_=Depends(require_auth)):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def compute_current_streak(checkins: list, today: date) -> int:
-    biting_dates = sorted(
-        {c["timestamp"][:10] for c in checkins if c["biting"]}, reverse=True
-    )
-    if not biting_dates:
-        if not checkins:
-            return 0
-        first = date.fromisoformat(min(c["timestamp"][:10] for c in checkins))
-        return (today - first).days
-    last_bite = date.fromisoformat(biting_dates[0])
-    return max(0, (today - last_bite).days)
+    dates_with_checkin = {c["timestamp"][:10] for c in checkins}
+    biting_dates = {c["timestamp"][:10] for c in checkins if c["biting"]}
+
+    streak = 0
+    d = today
+    while True:
+        d_str = d.isoformat()
+        if d_str in biting_dates:
+            break
+        if d != today and d_str not in dates_with_checkin:
+            # Past day with no log → assume biting
+            break
+        if d_str in dates_with_checkin:
+            streak += 1
+        d -= timedelta(days=1)
+
+    return streak
 
 
 def compute_longest_streak(checkins: list) -> int:
     if not checkins:
         return 0
 
-    biting_dates = sorted({c["timestamp"][:10] for c in checkins if c["biting"]})
-    all_dates = sorted({c["timestamp"][:10] for c in checkins})
+    dates_with_checkin = {c["timestamp"][:10] for c in checkins}
+    biting_dates = {c["timestamp"][:10] for c in checkins if c["biting"]}
+    clean_dates = sorted(dates_with_checkin - biting_dates)
 
-    if not biting_dates:
-        first = date.fromisoformat(all_dates[0])
-        last = date.fromisoformat(all_dates[-1])
-        return (last - first).days + 1
+    if not clean_dates:
+        return 0
 
-    longest = 0
-    # Check gap before first biting date
-    first_date = date.fromisoformat(all_dates[0])
-    first_bite = date.fromisoformat(biting_dates[0])
-    longest = max(longest, (first_bite - first_date).days)
-
-    # Check gaps between consecutive biting dates
-    for i in range(len(biting_dates) - 1):
-        d1 = date.fromisoformat(biting_dates[i])
-        d2 = date.fromisoformat(biting_dates[i + 1])
-        gap = (d2 - d1).days - 1
-        longest = max(longest, gap)
-
-    # Check gap after last biting date
-    last_bite = date.fromisoformat(biting_dates[-1])
-    today = date.today()
-    longest = max(longest, (today - last_bite).days)
+    longest = 1
+    current = 1
+    for i in range(1, len(clean_dates)):
+        d1 = date.fromisoformat(clean_dates[i - 1])
+        d2 = date.fromisoformat(clean_dates[i])
+        if (d2 - d1).days == 1:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 1
 
     return longest
 

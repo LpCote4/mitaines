@@ -69,7 +69,7 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 16px 90px;
+  padding: 0 16px calc(90px + env(safe-area-inset-bottom, 0px));
   scroll-behavior: smooth;
 }
 .screen::-webkit-scrollbar { display: none; }
@@ -449,13 +449,42 @@ body {
   overflow-y: auto;
 }
 
+.modal-top {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 4px 0;
+  touch-action: pan-y;
+}
+
 .modal-handle {
   width: 40px;
   height: 4px;
   background: var(--border);
   border-radius: 2px;
-  margin: 0 auto 20px;
 }
+
+.modal-close-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-2);
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close-btn:active { background: var(--card-hover); color: var(--text); }
 
 .modal h2 {
   font-family: var(--font-head);

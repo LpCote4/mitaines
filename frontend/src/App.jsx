@@ -3,6 +3,7 @@ import { getToken } from './api'
 import PinGate from './components/PinGate'
 import HomeScreen from './components/HomeScreen'
 import StatsScreen from './components/StatsScreen'
+import SettingsScreen from './components/SettingsScreen'
 import MilestoneModal from './components/MilestoneModal'
 import { getMilestones, acknowledgeMilestone } from './api'
 
@@ -35,11 +36,9 @@ export default function App() {
       <div className="orb orb-1" />
       <div className="orb orb-2" />
 
-      {screen === 'home' ? (
-        <HomeScreen />
-      ) : (
-        <StatsScreen />
-      )}
+      {screen === 'home' && <HomeScreen />}
+      {screen === 'stats' && <StatsScreen />}
+      {screen === 'settings' && <SettingsScreen />}
 
       <nav className="bottom-nav">
         <button className={`nav-btn ${screen === 'home' ? 'active' : ''}`} onClick={() => setScreen('home')}>
@@ -48,7 +47,11 @@ export default function App() {
         </button>
         <button className={`nav-btn ${screen === 'stats' ? 'active' : ''}`} onClick={() => setScreen('stats')}>
           <span>📊</span>
-          <span>Statistiques</span>
+          <span>Stats</span>
+        </button>
+        <button className={`nav-btn ${screen === 'settings' ? 'active' : ''}`} onClick={() => setScreen('settings')}>
+          <span>⚙️</span>
+          <span>Settings</span>
         </button>
       </nav>
 

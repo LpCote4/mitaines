@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { postCheckin } from '../api'
 
 const CONTEXTS = [
@@ -11,6 +12,7 @@ const CONTEXTS = [
 export default function CheckinModal({ title, biting, onSave, onClose }) {
   const [context, setContext] = useState(null)
   const [saving, setSaving] = useState(false)
+  const touchStartY = useRef(null)
 
   const save = async (ctx) => {
     setSaving(true)
@@ -19,10 +21,29 @@ export default function CheckinModal({ title, biting, onSave, onClose }) {
     onSave()
   }
 
-  return (
+  const handleTouchStart = (e) => {
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchMove = (e) => {
+    if (touchStartY.current === null) return
+    if (e.touches[0].clientY - touchStartY.current > 80) {
+      touchStartY.current = null
+      onClose()
+    }
+  }
+
+  return createPortal(
     <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-handle" />
+        <div
+          className="modal-top"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+        >
+          <div className="modal-handle" />
+          <button className="modal-close-btn" onClick={onClose} aria-label="Fermer">✕</button>
+        </div>
         <h2>{title}</h2>
         <p style={{ color: 'var(--text-2)', marginBottom: 16, fontSize: '0.9rem' }}>
           Dans quel contexte?
@@ -49,6 +70,7 @@ export default function CheckinModal({ title, biting, onSave, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
