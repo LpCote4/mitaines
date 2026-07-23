@@ -99,12 +99,28 @@ async def state(now: Optional[datetime] = None) -> dict:
         "credit_per_checkin": round(CREDIT_PER_CHECKIN * mult, 3),
         "credit_ready": credit_ready,
         "next_credit_at": next_credit_iso,
-        "next_penalty_preview": penalty_for(remaining),
+        "next_penalty_preview": round(min(penalty_for(remaining), GOAL_DAYS - remaining), 2),
         "active_event": ev,
     }
 
 
 # ── Mutations ───────────────────────────────────────────────────────────────────
+
+async def _record_clamped(now: datetime, desired_delta: float, reason: str,
+                          meta: dict) -> float:
+    """Record the *effective* delta after clamping to [0, GOAL_DAYS].
+
+    Clamping at write-time (not just on the final sum) means a penalty can
+    never push the bank above the starting value, and a credit can never push
+    it below zero — so there's no hidden debt/overshoot that later check-ins
+    would silently absorb.
+    """
+    current = clamp_remaining(GOAL_DAYS + await db.ledger_sum())
+    effective = round(clamp_remaining(current + desired_delta) - current, 4)
+    meta = {**meta, "desired": round(desired_delta, 4)}
+    await db.add_ledger(now.isoformat(), effective, reason, json.dumps(meta))
+    return effective
+
 
 async def apply_checkin_credit(now: Optional[datetime] = None) -> dict:
     """Called on a clean/urge check-in. Returns whether a credit was banked."""
@@ -122,8 +138,8 @@ async def apply_checkin_credit(now: Optional[datetime] = None) -> dict:
     ev = await active_event(now)
     if ev:
         meta["event"] = ev["key"]
-    await db.add_ledger(now.isoformat(), -amount, "checkin_credit", json.dumps(meta))
-    return {"credited": True, "amount": amount, "multiplier": mult, **(await state(now))}
+    effective = await _record_clamped(now, -amount, "checkin_credit", meta)
+    return {"credited": True, "amount": abs(effective), "multiplier": mult, **(await state(now))}
 
 
 async def apply_bite_penalty(now: Optional[datetime] = None) -> dict:
@@ -135,24 +151,24 @@ async def apply_bite_penalty(now: Optional[datetime] = None) -> dict:
                 **(await state(now))}
 
     remaining = await remaining_days()
-    amount = penalty_for(remaining)
-    await db.add_ledger(now.isoformat(), amount, "bite_penalty",
-                        json.dumps({"remaining_before": round(remaining, 2)}))
-    return {"penalized": True, "amount": amount, **(await state(now))}
+    nominal = penalty_for(remaining)
+    effective = await _record_clamped(now, nominal, "bite_penalty",
+                                      {"remaining_before": round(remaining, 2)})
+    return {"penalized": True, "amount": round(effective, 2), "nominal": nominal,
+            **(await state(now))}
 
 
 async def apply_event_bonus(amount: float, event_key: str,
                             now: Optional[datetime] = None) -> dict:
     """Flat bonus credit (e.g. bounty completion). Not rate-limited."""
     now = now or datetime.utcnow()
-    await db.add_ledger(now.isoformat(), -abs(amount), "event_bonus",
-                        json.dumps({"event": event_key}))
-    return {"credited": True, "amount": abs(amount), **(await state(now))}
+    effective = await _record_clamped(now, -abs(amount), "event_bonus",
+                                      {"event": event_key})
+    return {"credited": True, "amount": abs(effective), **(await state(now))}
 
 
 async def manual_adjust(delta: float, note: str,
                         now: Optional[datetime] = None) -> dict:
     now = now or datetime.utcnow()
-    await db.add_ledger(now.isoformat(), delta, "manual_adjust",
-                        json.dumps({"note": note}))
+    await _record_clamped(now, delta, "manual_adjust", {"note": note})
     return await state(now)
