@@ -83,7 +83,8 @@ async def state(now: Optional[datetime] = None) -> dict:
     if last_credit:
         next_credit_at = (datetime.fromisoformat(last_credit) + CREDIT_COOLDOWN)
         credit_ready = now >= next_credit_at
-        next_credit_iso = None if credit_ready else next_credit_at.isoformat()
+        # Emit an explicit UTC marker so browsers don't parse it as local time.
+        next_credit_iso = None if credit_ready else next_credit_at.isoformat() + "Z"
     else:
         credit_ready = True
         next_credit_iso = None
@@ -113,7 +114,7 @@ async def apply_checkin_credit(now: Optional[datetime] = None) -> dict:
         ready_at = datetime.fromisoformat(last_credit) + CREDIT_COOLDOWN
         if now < ready_at:
             return {"credited": False, "amount": 0.0, "reason": "cooldown",
-                    "next_credit_at": ready_at.isoformat(), **(await state(now))}
+                    "next_credit_at": ready_at.isoformat() + "Z", **(await state(now))}
 
     mult = await current_multiplier(now)
     amount = round(CREDIT_PER_CHECKIN * mult, 3)

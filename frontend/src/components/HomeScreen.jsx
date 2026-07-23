@@ -47,7 +47,10 @@ function CagnotteRing({ remaining, goal }) {
 
 function minutesUntil(iso) {
   if (!iso) return 0
-  const diff = new Date(iso).getTime() - Date.now()
+  // Backend timestamps are UTC. If no timezone marker is present, treat as UTC
+  // (browsers otherwise parse a bare ISO string as *local* time -> wrong offset).
+  const hasTz = /[zZ]|[+-]\d{2}:?\d{2}$/.test(iso)
+  const diff = new Date(hasTz ? iso : iso + 'Z').getTime() - Date.now()
   return Math.max(0, Math.ceil(diff / 60000))
 }
 
@@ -88,21 +91,14 @@ export default function HomeScreen() {
     if (ec?.credited) showFeedback(`💰 +${ec.amount} jour banké!`)
     else if (ec?.reason === 'cooldown') showFeedback(`✅ Noté — déjà crédité cette heure`)
     else showFeedback('✅ Noté — clean!')
-    getSummary().then(setSummary)
-  }
-
-  const handleUrge = async () => {
-    const ec = applyEconResult(await postCheckin(false, null, 'urge'))
-    if (ec?.credited) showFeedback(`🛑 Envie résistée! +${ec.amount} jour 💰`)
-    else showFeedback('🛑 Bravo! Envie résistée!')
-    getSummary().then(setSummary)
+    load()
   }
 
   const handleCheckinDone = (res) => {
     const ec = applyEconResult(res)
     setCheckinType(null)
     if (ec?.penalized) showFeedback(`😬 Noté — +${ec.amount} jour au compteur`)
-    getSummary().then(setSummary)
+    load()
   }
 
   const handlePushEnable = async () => {
@@ -209,25 +205,14 @@ export default function HomeScreen() {
           <span>Je ronge</span>
           <span className="action-btn-sub">−{economy?.next_penalty_preview ?? '?'} j</span>
         </button>
-        <button className="action-btn urge" onClick={handleUrge}>
-          <span className="icon">🛑</span>
-          <span>J'ai résisté!</span>
-          <span className="action-btn-sub">Bravo!</span>
-        </button>
       </div>
 
-      <div className="today-summary">
+      <div className="today-summary" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         <div className="today-stat">
           <div className="today-stat-value" style={{ color: 'var(--danger)' }}>
             {summary?.today_biting ?? '–'}
           </div>
-          <div className="today-stat-label">rongements</div>
-        </div>
-        <div className="today-stat">
-          <div className="today-stat-value" style={{ color: 'var(--urge)' }}>
-            {summary?.today_urges ?? '–'}
-          </div>
-          <div className="today-stat-label">résistances</div>
+          <div className="today-stat-label">rongements aujourd'hui</div>
         </div>
         <div className="today-stat">
           <div className="today-stat-value" style={{ color: 'var(--text-2)' }}>
