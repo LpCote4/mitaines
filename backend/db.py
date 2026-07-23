@@ -47,6 +47,28 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT NOT NULL PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    delta REAL NOT NULL,
+    reason TEXT NOT NULL,
+    meta TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    label TEXT NOT NULL,
+    multiplier REAL NOT NULL DEFAULT 2.0,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    meta TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_reason ON ledger(reason);
+CREATE INDEX IF NOT EXISTS idx_events_window ON events(starts_at, ends_at);
 """
 
 
@@ -209,6 +231,89 @@ async def mark_milestone_shown(key: str):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE milestones SET shown = 1 WHERE key = ?", (key,))
         await db.commit()
+
+
+
+# ── Ledger (economy) ────────────────────────────────────────────────────────────
+
+async def add_ledger(ts: str, delta: float, reason: str, meta: Optional[str] = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO ledger (ts, delta, reason, meta) VALUES (?, ?, ?, ?)",
+            (ts, delta, reason, meta),
+        )
+        await db.commit()
+
+
+async def ledger_sum() -> float:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COALESCE(SUM(delta), 0) FROM ledger") as cursor:
+            row = await cursor.fetchone()
+            return float(row[0]) if row else 0.0
+
+
+async def get_last_credit_ts() -> Optional[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT ts FROM ledger WHERE reason = 'checkin_credit' ORDER BY ts DESC LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+
+async def has_ledger_reason_on_date(reason: str, date_str: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT 1 FROM ledger WHERE reason = ? AND date(ts) = ? LIMIT 1",
+            (reason, date_str),
+        ) as cursor:
+            return await cursor.fetchone() is not None
+
+
+async def get_ledger(limit: int = 100) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM ledger ORDER BY ts DESC LIMIT ?", (limit,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+# ── Events ──────────────────────────────────────────────────────────────────────
+
+async def add_event(key: str, label: str, multiplier: float, starts_at: str,
+                    ends_at: str, created_at: str, meta: Optional[str] = None) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT INTO events (key, label, multiplier, starts_at, ends_at, created_at, meta)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (key, label, multiplier, starts_at, ends_at, created_at, meta),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_active_events(now_iso: str) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM events WHERE starts_at <= ? AND ends_at > ? ORDER BY multiplier DESC",
+            (now_iso, now_iso),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_upcoming_events(now_iso: str, limit: int = 10) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM events WHERE ends_at > ? ORDER BY starts_at LIMIT ?",
+            (now_iso, limit),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
 
 
 async def get_setting(key: str) -> Optional[str]:

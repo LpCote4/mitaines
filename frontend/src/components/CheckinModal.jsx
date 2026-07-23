@@ -16,9 +16,9 @@ export default function CheckinModal({ title, biting, onSave, onClose }) {
 
   const save = async (ctx) => {
     setSaving(true)
-    await postCheckin(biting, ctx, 'manual')
+    const res = await postCheckin(biting, ctx, 'manual')
     setSaving(false)
-    onSave()
+    onSave(res)
   }
 
   const handleTouchStart = (e) => {

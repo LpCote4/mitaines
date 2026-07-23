@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db
+import economy as economy_module
 import insights as insights_module
 import scheduler as scheduler_module
 
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 PIN_HASH = os.getenv("PIN_HASH", "")
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 LAPTOP_GOAL_DAYS = int(os.getenv("LAPTOP_GOAL_DAYS", "90"))
 PINGS_PER_DAY_DEFAULT = int(os.getenv("PINGS_PER_DAY", "5"))
@@ -94,7 +96,15 @@ async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
 
     await db.add_checkin(now_iso, data.biting, data.context, checkin_type)
     await check_and_unlock_milestones()
-    return {"ok": True}
+
+    # Economy: biting adds a (per-day-capped) penalty; anything else banks a
+    # rate-limited credit toward the laptop.
+    if data.biting:
+        econ = await economy_module.apply_bite_penalty(now)
+    else:
+        econ = await economy_module.apply_checkin_credit(now)
+
+    return {"ok": True, "economy": econ}
 
 
 @app.get("/api/v1/checkins")
@@ -102,6 +112,85 @@ async def list_checkins(date_filter: Optional[str] = None, _=Depends(require_aut
     if date_filter:
         return await db.get_checkins_for_date(date_filter)
     return await db.get_all_checkins()
+
+
+# ── Economy ───────────────────────────────────────────────────────────────────
+
+async def require_admin(x_admin_token: Optional[str] = Header(default=None)):
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=503, detail="Admin token not configured")
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+
+
+@app.get("/api/v1/economy")
+async def get_economy(_=Depends(require_auth)):
+    return await economy_module.state()
+
+
+@app.get("/api/v1/economy/ledger")
+async def get_ledger(limit: int = 100, _=Depends(require_auth)):
+    return await db.get_ledger(limit)
+
+
+@app.get("/api/v1/events/active")
+async def get_active_event(_=Depends(require_auth)):
+    return {"active": await economy_module.active_event()}
+
+
+@app.get("/api/v1/events/upcoming")
+async def get_upcoming_events(_=Depends(require_auth)):
+    now = datetime.utcnow().isoformat()
+    return {"events": await db.get_upcoming_events(now)}
+
+
+class EventCreate(BaseModel):
+    key: str
+    label: str
+    multiplier: float = 2.0
+    starts_at: Optional[str] = None      # ISO; defaults to now
+    duration_hours: Optional[float] = None
+    ends_at: Optional[str] = None        # ISO; overrides duration_hours
+    meta: Optional[dict] = None
+
+
+@app.post("/api/v1/admin/events")
+async def create_event(data: EventCreate, _=Depends(require_admin)):
+    import json as _json
+    now = datetime.utcnow()
+    starts = datetime.fromisoformat(data.starts_at) if data.starts_at else now
+    if data.ends_at:
+        ends = datetime.fromisoformat(data.ends_at)
+    elif data.duration_hours is not None:
+        ends = starts + timedelta(hours=data.duration_hours)
+    else:
+        ends = starts + timedelta(hours=24)
+    event_id = await db.add_event(
+        data.key, data.label, data.multiplier,
+        starts.isoformat(), ends.isoformat(), now.isoformat(),
+        _json.dumps(data.meta) if data.meta else None,
+    )
+    return {"ok": True, "id": event_id, "starts_at": starts.isoformat(), "ends_at": ends.isoformat()}
+
+
+class BonusCreate(BaseModel):
+    amount: float
+    event_key: str = "bonus"
+
+
+@app.post("/api/v1/admin/bonus")
+async def grant_bonus(data: BonusCreate, _=Depends(require_admin)):
+    return await economy_module.apply_event_bonus(data.amount, data.event_key)
+
+
+class AdjustCreate(BaseModel):
+    delta: float
+    note: str = "manual"
+
+
+@app.post("/api/v1/admin/adjust")
+async def adjust_economy(data: AdjustCreate, _=Depends(require_admin)):
+    return await economy_module.manual_adjust(data.delta, data.note)
 
 
 # ── Evenings ──────────────────────────────────────────────────────────────────

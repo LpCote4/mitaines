@@ -114,6 +114,20 @@ export function getEvening(date) {
   return req('GET', `/api/v1/evenings/${date}`);
 }
 
+// ── Economy ───────────────────────────────────────────────────────────────────
+
+export function getEconomy() {
+  return req('GET', '/api/v1/economy');
+}
+
+export function getActiveEvent() {
+  return req('GET', '/api/v1/events/active');
+}
+
+export function getLedger(limit = 50) {
+  return req('GET', `/api/v1/economy/ledger?limit=${limit}`);
+}
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 export function getSummary() {
