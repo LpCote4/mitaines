@@ -1,5 +1,7 @@
 const SESSION_KEY = 'mitaines_session';
-const API_BASE = '';
+// '' = same-origin (prod web at /mitaines). Staging/native builds inject an
+// absolute or prefixed base via VITE_API_BASE (e.g. '/mitaines-dev').
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export function getToken() {
   return localStorage.getItem(SESSION_KEY);

@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+// `--mode staging` builds the copy served at lpcote.ca/mitaines-dev (separate
+// containers + DB) so changes can be tested without touching prod /mitaines.
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   server: {
     proxy: {
@@ -11,8 +13,8 @@ export default defineConfig({
       },
     },
   },
-  base: '/mitaines/',
+  base: mode === 'staging' ? '/mitaines-dev/' : '/mitaines/',
   build: {
     outDir: 'dist',
   },
-})
+}))

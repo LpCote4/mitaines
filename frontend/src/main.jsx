@@ -3,7 +3,9 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
 
-if ('serviceWorker' in navigator) {
+// Register the SW for the prod web/PWA build only. Staging/native builds set
+// VITE_API_BASE and skip it (avoids stale caches while iterating).
+if (!import.meta.env.VITE_API_BASE && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register(import.meta.env.BASE_URL + 'service-worker.js').catch(() => {})
   })
