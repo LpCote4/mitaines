@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react'
 import {
   ComposedChart, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Line, PieChart, Pie, Cell,
+  ResponsiveContainer, Line, PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts'
-import { getDailyStats, getHeatmap, getHourlyStats, getContextStats, getInsights, getSummary } from '../api'
+import {
+  getDailyStats, getHeatmap, getHourlyStats, getContextStats, getInsights,
+  getSummary, getEconomy, getLedger,
+} from '../api'
 import DayDetailModal from './DayDetailModal'
+
+const GOAL_DAYS = 90
+const CAGNOTTE_TOTAL = 3000
+const DAY_VALUE = CAGNOTTE_TOTAL / GOAL_DAYS // ≈ $33.33 per day
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -24,12 +31,55 @@ const CONTEXT_COLORS = {
   other: '#94a3b8',
 }
 
+const CONTEXT_LABELS = {
+  coding: '💻 Coding', stress: '😰 Stress', bored: '😑 Ennui', other: '🤷 Autre',
+}
+
+const WEEKDAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+
 function addRollingAvg(data, key = 'biting', window = 7) {
   return data.map((item, i) => {
     const slice = data.slice(Math.max(0, i - window + 1), i + 1)
     const avg = slice.reduce((s, d) => s + (d[key] || 0), 0) / slice.length
     return { ...item, avg: Math.round(avg * 10) / 10 }
   })
+}
+
+function fmtMoney(v) {
+  return '$' + (v || 0).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Rebuild the cagnotte curve over time by replaying the ledger (asc).
+function buildCagnotteSeries(ledger) {
+  const asc = [...ledger].sort((a, b) => a.ts.localeCompare(b.ts))
+  let remaining = GOAL_DAYS
+  const series = [{ label: 'Départ', cagnotte: 0 }]
+  for (const row of asc) {
+    remaining = Math.max(0, Math.min(GOAL_DAYS, remaining + row.delta))
+    const cagnotte = Math.round(CAGNOTTE_TOTAL * ((GOAL_DAYS - remaining) / GOAL_DAYS) * 100) / 100
+    const d = new Date(row.ts.endsWith('Z') ? row.ts : row.ts + 'Z')
+    series.push({
+      label: d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) +
+        ' ' + d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' }),
+      cagnotte,
+      remaining: Math.round(remaining * 10) / 10,
+    })
+  }
+  return series
+}
+
+function projectFinish(ledger, remaining) {
+  const asc = [...ledger].sort((a, b) => a.ts.localeCompare(b.ts))
+  if (asc.length < 2) return null
+  const firstTs = new Date(asc[0].ts.endsWith('Z') ? asc[0].ts : asc[0].ts + 'Z').getTime()
+  const elapsedDays = (Date.now() - firstTs) / 86400000
+  const earned = GOAL_DAYS - remaining // days of progress banked
+  if (elapsedDays < 0.5 || earned <= 0.05) return null
+  const rate = earned / elapsedDays // progress-days per real day
+  const daysLeft = remaining / rate
+  if (!isFinite(daysLeft) || daysLeft > 3650) return null
+  const eta = new Date(Date.now() + daysLeft * 86400000)
+  return { eta, rate, daysLeft: Math.round(daysLeft) }
 }
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -42,199 +92,323 @@ const CustomTooltip = ({ active, payload, label }) => {
       <div style={{ marginBottom: 4, color: '#94a3b8' }}>{label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} style={{ color: p.color }}>
-          {p.name}: {p.value}
+          {p.name}: {p.dataKey === 'cagnotte' ? fmtMoney(p.value) : p.value}
         </div>
       ))}
     </div>
   )
 }
 
-// ── Overview tab ──────────────────────────────────────────────────────────────
+function StatCard({ value, label, color }) {
+  return (
+    <div className="card" style={{ textAlign: 'center' }}>
+      <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.8rem', fontWeight: 800, color }}>
+        {value}
+      </div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{label}</div>
+    </div>
+  )
+}
 
-function OverviewTab() {
-  const [summary, setSummary] = useState(null)
-  const [insights, setInsights] = useState([])
-  const [contextData, setContextData] = useState([])
+// ── Progression tab (économie) ─────────────────────────────────────────────────
+
+function ProgressionTab() {
+  const [economy, setEconomy] = useState(null)
+  const [ledger, setLedger] = useState([])
 
   useEffect(() => {
-    getSummary().then(setSummary)
-    getInsights().then((d) => setInsights(d?.insights || []))
-    getContextStats().then(setContextData)
+    getEconomy().then(setEconomy)
+    getLedger(500).then((d) => setLedger(d || []))
   }, [])
 
-  if (!summary) return <div className="loading">Chargement…</div>
+  if (!economy) return <div className="loading">Chargement…</div>
+
+  const series = buildCagnotteSeries(ledger)
+  const proj = projectFinish(ledger, economy.remaining_days)
+
+  // This week: earned vs lost
+  const weekAgo = Date.now() - 7 * 86400000
+  let earnedDays = 0, lostDays = 0
+  for (const r of ledger) {
+    const t = new Date(r.ts.endsWith('Z') ? r.ts : r.ts + 'Z').getTime()
+    if (t < weekAgo) continue
+    if (r.delta < 0) earnedDays += -r.delta
+    else lostDays += r.delta
+  }
+  const earned$ = earnedDays * DAY_VALUE
+  const lost$ = lostDays * DAY_VALUE
+  const net$ = earned$ - lost$
 
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--font-head)', fontSize: '2rem', fontWeight: 800 }}>
-            {summary.current_streak}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>streak actuel</div>
-        </div>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--font-head)', fontSize: '2rem', fontWeight: 800 }}>
-            {summary.longest_streak}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>record personnel</div>
-        </div>
+        <StatCard value={fmtMoney(economy.cagnotte)} label={`cagnotte / ${fmtMoney(CAGNOTTE_TOTAL)}`} color="#10b981" />
+        <StatCard value={economy.remaining_days.toFixed(1)} label="jours au laptop" />
       </div>
 
-      {contextData.length > 0 && (
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="section-title">Contextes (30 derniers jours)</div>
-          <div style={{ display: 'flex', height: 160 }}>
-            <ResponsiveContainer width="50%" height="100%">
-              <PieChart>
-                <Pie data={contextData} dataKey="count" cx="50%" cy="50%" outerRadius={60} innerRadius={30}>
-                  {contextData.map((entry) => (
-                    <Cell key={entry.context} fill={CONTEXT_COLORS[entry.context] || '#94a3b8'} />
-                  ))}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
-              {contextData.map((d) => (
-                <div key={d.context} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem' }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: '50%',
-                    background: CONTEXT_COLORS[d.context] || '#94a3b8', flexShrink: 0,
-                  }} />
-                  <span style={{ textTransform: 'capitalize' }}>{d.context}</span>
-                  <span style={{ marginLeft: 'auto', color: 'var(--text-2)' }}>{d.pct}%</span>
-                </div>
-              ))}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">💰 La cagnotte dans le temps</div>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={190}>
+            <AreaChart data={series} margin={{ top: 4, right: 6, left: -12, bottom: 0 }}>
+              <defs>
+                <linearGradient id="cag-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.5} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="label" tick={{ fill: '#475569', fontSize: 9 }} interval="preserveEnd" minTickGap={40} />
+              <YAxis tick={{ fill: '#475569', fontSize: 10 }} width={44} tickFormatter={(v) => '$' + v} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area type="monotone" dataKey="cagnotte" stroke="#10b981" strokeWidth={2}
+                fill="url(#cag-grad)" name="Cagnotte" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        {series.length <= 2 && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4 }}>
+            Continue à logger — la courbe se remplit à chaque check-in. 📈
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">🎯 Projection laptop</div>
+        {proj ? (
+          <div>
+            <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', fontWeight: 800 }}>
+              ~{proj.eta.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
+            <div style={{ fontSize: '0.82rem', color: 'var(--text-2)', marginTop: 2 }}>
+              dans ~{proj.daysLeft} jours, à ton rythme actuel ({(proj.rate * DAY_VALUE).toFixed(0)} $/jour)
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>
+            Encore un peu de données et je te donne une date projetée. Continue à logger! 💪
+          </div>
+        )}
+      </div>
 
-      {insights.length > 0 && (
-        <div className="card">
-          <div className="section-title">Insights</div>
-          {insights.map((text, i) => (
-            <div key={i} className="insight-item">
-              <span className="insight-dot">💡</span>
-              <span>{text}</span>
+      <div className="card">
+        <div className="section-title">Cette semaine</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, textAlign: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 800, color: '#10b981', fontSize: '1.2rem' }}>+{fmtMoney(earned$)}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>gagné</div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, color: '#ef4444', fontSize: '1.2rem' }}>−{fmtMoney(lost$)}</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>perdu (rongements)</div>
+          </div>
+          <div>
+            <div style={{ fontWeight: 800, color: net$ >= 0 ? '#10b981' : '#ef4444', fontSize: '1.2rem' }}>
+              {net$ >= 0 ? '+' : '−'}{fmtMoney(Math.abs(net$))}
             </div>
-          ))}
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-2)' }}>net</div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
-// ── Timeline tab ──────────────────────────────────────────────────────────────
+// ── Habitudes tab (comportement) ───────────────────────────────────────────────
 
-function TimelineTab({ onDayClick }) {
+function HabitudesTab({ onDayClick }) {
+  const [hourly, setHourly] = useState([])
+  const [context, setContext] = useState([])
   const [daily, setDaily] = useState([])
   const [heatmap, setHeatmap] = useState([])
 
   useEffect(() => {
-    getDailyStats().then((d) => setDaily(addRollingAvg(d)))
+    getHourlyStats().then(setHourly)
+    getContextStats().then(setContext)
+    getDailyStats().then((d) => setDaily(d || []))
     getHeatmap().then(setHeatmap)
   }, [])
 
-  if (!daily.length) return <div className="loading">Chargement…</div>
+  if (!daily.length && !hourly.length) return <div className="loading">Chargement…</div>
 
-  const chartData = daily.map((d) => ({ ...d, name: d.date.slice(5) }))
+  // Danger zone
+  const worstHour = hourly.reduce((a, b) => (b.biting > (a?.biting || 0) ? b : a), null)
+  const worstContext = context[0] // already sorted desc
+
+  // Check-ins vs rongements per day
+  const cvr = daily.map((d) => ({
+    name: d.date.slice(5),
+    'Check-ins': d.clean || 0,
+    Rongements: d.biting || 0,
+  }))
+
+  // By weekday (biting)
+  const wd = Array(7).fill(0)
+  for (const d of daily) {
+    const day = new Date(d.date + 'T12:00:00').getDay()
+    wd[day] += d.biting || 0
+  }
+  const weekdayData = [1, 2, 3, 4, 5, 6, 0].map((i) => ({ name: WEEKDAYS[i], biting: wd[i] }))
+
+  // Trend this week vs last
+  const sum = (arr) => arr.reduce((s, d) => s + (d.biting || 0), 0)
+  const thisWeek = sum(daily.slice(-7))
+  const lastWeek = sum(daily.slice(-14, -7))
+  const trend = lastWeek === 0 ? null : (thisWeek - lastWeek) / lastWeek
 
   return (
     <div>
+      {(worstHour || worstContext) && (
+        <div className="card" style={{ marginBottom: 16, borderColor: 'rgba(239,68,68,0.3)' }}>
+          <div className="section-title">⚠️ Zone de danger</div>
+          <div style={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
+            {worstHour && worstHour.biting > 0 && (
+              <div>Heure la plus risquée: <strong>{worstHour.hour}h–{worstHour.hour + 1}h</strong></div>
+            )}
+            {worstContext && (
+              <div>Contexte dominant: <strong>{CONTEXT_LABELS[worstContext.context] || worstContext.context}</strong> ({worstContext.pct}%)</div>
+            )}
+            {(!worstHour || worstHour.biting === 0) && !worstContext && (
+              <div style={{ color: 'var(--text-2)' }}>Pas encore de pattern — logge quelques rongements avec contexte.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="section-title">Rongements / jour (30j) + moyenne 7j</div>
+        <div className="section-title">Check-ins vs rongements (30j)</div>
         <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height={180}>
-            <ComposedChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={190}>
+            <BarChart data={cvr} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <XAxis dataKey="name" tick={{ fill: '#475569', fontSize: 10 }} interval={4} />
               <YAxis tick={{ fill: '#475569', fontSize: 10 }} allowDecimals={false} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="biting" fill="#ef4444" radius={[3, 3, 0, 0]} name="Rongements" />
-              <Line type="monotone" dataKey="avg" stroke="#f59e0b" strokeWidth={2} dot={false} name="Moy. 7j" />
-            </ComposedChart>
+              <Bar dataKey="Check-ins" fill="#10b981" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Rongements" fill="#ef4444" radius={[3, 3, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
         <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: 4, display: 'flex', gap: 12 }}>
+          <span><span style={{ color: '#10b981' }}>■</span> Check-ins clean</span>
           <span><span style={{ color: '#ef4444' }}>■</span> Rongements</span>
-          <span><span style={{ color: '#f59e0b' }}>—</span> Moy. 7 jours</span>
         </div>
       </div>
 
-      <div className="card">
-        <div className="section-title">Heatmap (35 derniers jours) — tap pour détail</div>
-        <div style={{ display: 'flex', gap: 4, marginBottom: 8, fontSize: '0.7rem', color: 'var(--text-3)' }}>
-          {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
-            <div key={i} style={{ flex: 1, textAlign: 'center' }}>{d}</div>
-          ))}
+      {trend !== null && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="section-title">Tendance</div>
+          <div style={{ fontSize: '0.9rem' }}>
+            {trend < -0.1 ? `📉 ${Math.round(-trend * 100)}% de rongements en moins vs la semaine dernière — solide!`
+              : trend > 0.1 ? `📈 ${Math.round(trend * 100)}% de plus que la semaine dernière — on se ressaisit.`
+                : '➡️ Stable vs la semaine dernière.'}
+          </div>
         </div>
-        <div className="heatmap">
-          {heatmap.map((cell) => (
-            <div
-              key={cell.date}
-              className={`heatmap-cell ${cell.tracked && cell.total < 3 ? 'partial' : ''}`}
-              style={{ background: heatColor(cell.biting, cell.tracked) }}
-              title={`${cell.date}: ${cell.biting} rongements`}
-              onClick={() => onDayClick(cell.date)}
-            />
-          ))}
-        </div>
-        <div className="heatmap-legend">
-          <div className="heatmap-legend-swatch" style={{ background: '#1a1a28', border: '1px solid rgba(255,255,255,0.15)' }} />
-          <span>Non tracé</span>
-          <div className="heatmap-legend-swatch" style={{ background: '#10b981' }} />
-          <span>Clean</span>
-          <div className="heatmap-legend-swatch" style={{ background: '#f59e0b' }} />
-          <span>2–3</span>
-          <div className="heatmap-legend-swatch" style={{ background: '#ef4444' }} />
-          <span>5+</span>
-        </div>
-      </div>
-    </div>
-  )
-}
+      )}
 
-// ── Patterns tab ──────────────────────────────────────────────────────────────
-
-function PatternsTab() {
-  const [hourly, setHourly] = useState([])
-  const [daily, setDaily] = useState([])
-
-  useEffect(() => {
-    getHourlyStats().then(setHourly)
-    getDailyStats().then(setDaily)
-  }, [])
-
-  if (!hourly.length) return <div className="loading">Chargement…</div>
-
-  const trackedDays = daily.filter((d) => d.pings_sent > 0)
-  const goodCoverageDays = trackedDays.filter((d) => d.coverage !== null && d.coverage >= 0.6)
-  const coveragePct = trackedDays.length > 0
-    ? Math.round((goodCoverageDays.length / trackedDays.length) * 100)
-    : 0
-
-  return (
-    <div>
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="section-title">Rongements par heure (30j)</div>
+        <div className="section-title">Rongements par heure</div>
         <div className="chart-wrap">
-          <ResponsiveContainer width="100%" height={180}>
+          <ResponsiveContainer width="100%" height={170}>
             <BarChart data={hourly} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
               <XAxis dataKey="hour" tickFormatter={(h) => `${h}h`} tick={{ fill: '#475569', fontSize: 10 }} interval={2} />
               <YAxis tick={{ fill: '#475569', fontSize: 10 }} allowDecimals={false} />
-              <Tooltip
-                content={<CustomTooltip />}
-                formatter={(v, n) => [v, n === 'biting' ? 'Rongements' : n]}
-              />
-              <Bar dataKey="biting" fill="#7c3aed" radius={[3, 3, 0, 0]} name="biting" />
+              <Tooltip content={<CustomTooltip />} formatter={(v) => [v, 'Rongements']} />
+              <Bar dataKey="biting" fill="#7c3aed" radius={[3, 3, 0, 0]} name="Rongements" />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="section-title">Qualité des données</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+        <div className="section-title">Par jour de la semaine</div>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={150}>
+            <BarChart data={weekdayData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <XAxis dataKey="name" tick={{ fill: '#475569', fontSize: 10 }} />
+              <YAxis tick={{ fill: '#475569', fontSize: 10 }} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} formatter={(v) => [v, 'Rongements']} />
+              <Bar dataKey="biting" fill="#f59e0b" radius={[3, 3, 0, 0]} name="Rongements" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {heatmap.length > 0 && (
+        <div className="card">
+          <div className="section-title">Heatmap (35j) — tap pour détail</div>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8, fontSize: '0.7rem', color: 'var(--text-3)' }}>
+            {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center' }}>{d}</div>
+            ))}
+          </div>
+          <div className="heatmap">
+            {heatmap.map((cell) => (
+              <div
+                key={cell.date}
+                className={`heatmap-cell ${cell.tracked && cell.total < 3 ? 'partial' : ''}`}
+                style={{ background: heatColor(cell.biting, cell.tracked) }}
+                title={`${cell.date}: ${cell.biting} rongements`}
+                onClick={() => onDayClick(cell.date)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Constance tab (engagement) ─────────────────────────────────────────────────
+
+function ConstanceTab() {
+  const [daily, setDaily] = useState([])
+  const [summary, setSummary] = useState(null)
+
+  useEffect(() => {
+    getDailyStats().then((d) => setDaily(d || []))
+    getSummary().then(setSummary)
+  }, [])
+
+  if (!daily.length) return <div className="loading">Chargement…</div>
+
+  const last14 = daily.slice(-14)
+  const daysLogged = daily.filter((d) => d.total > 0).length
+  const avgCheckins = daily.length
+    ? Math.round((daily.reduce((s, d) => s + (d.total || 0), 0) / Math.max(daysLogged, 1)) * 10) / 10
+    : 0
+
+  const trackedDays = daily.filter((d) => d.pings_sent > 0)
+  const goodCoverage = trackedDays.filter((d) => d.coverage !== null && d.coverage >= 0.6)
+  const coveragePct = trackedDays.length ? Math.round((goodCoverage.length / trackedDays.length) * 100) : 0
+
+  const cData = last14.map((d) => ({ name: d.date.slice(5), checkins: d.total || 0 }))
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+        <StatCard value={avgCheckins} label="check-ins / jour actif" color="#06b6d4" />
+        <StatCard value={summary?.longest_streak ?? '–'} label="plus longue série clean" />
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="section-title">Check-ins par jour (14j)</div>
+        <div className="chart-wrap">
+          <ResponsiveContainer width="100%" height={170}>
+            <BarChart data={cData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <XAxis dataKey="name" tick={{ fill: '#475569', fontSize: 10 }} interval={2} />
+              <YAxis tick={{ fill: '#475569', fontSize: 10 }} allowDecimals={false} />
+              <Tooltip content={<CustomTooltip />} formatter={(v) => [v, 'Check-ins']} />
+              <Bar dataKey="checkins" fill="#06b6d4" radius={[3, 3, 0, 0]} name="Check-ins" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4 }}>
+          Gagner le laptop = se pointer. Chaque check-in compte. 💪
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-title">Réponse aux pings</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{
             width: 56, height: 56, borderRadius: '50%',
             background: coveragePct >= 60 ? 'var(--success-dim)' : 'var(--warning-dim)',
@@ -246,39 +420,12 @@ function PatternsTab() {
           </div>
           <div>
             <div style={{ fontWeight: 600 }}>
-              {coveragePct >= 60 ? 'Bonne couverture' : 'Couverture insuffisante'}
+              {coveragePct >= 60 ? 'Bonne couverture' : 'À améliorer'}
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
-              {goodCoverageDays.length}/{trackedDays.length} jours avec ≥60% de réponses
+              {goodCoverage.length}/{trackedDays.length} jours avec ≥60% de réponses
             </div>
           </div>
-        </div>
-        {coveragePct < 60 && trackedDays.length > 5 && (
-          <div style={{ background: 'var(--warning-dim)', borderRadius: 8, padding: '10px 12px', fontSize: '0.85rem', color: 'var(--warning)' }}>
-            💡 Les stats sont moins fiables avec peu de réponses. Essaie de répondre à plus de pings!
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="section-title">Couverture journalière (30j)</div>
-        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginTop: 8 }}>
-          {daily.slice(-30).map((d) => {
-            const cov = d.coverage
-            const color = cov === null ? '#1a1a28' : cov >= 0.8 ? '#10b981' : cov >= 0.5 ? '#f59e0b' : '#ef4444'
-            return (
-              <div
-                key={d.date}
-                title={`${d.date}: ${cov !== null ? Math.round(cov * 100) + '%' : 'aucun ping'}`}
-                style={{ width: 14, height: 14, borderRadius: 3, background: color, cursor: 'default' }}
-              />
-            )
-          })}
-        </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: '0.75rem', color: 'var(--text-3)' }}>
-          <span><span style={{ color: '#10b981' }}>■</span> 80%+</span>
-          <span><span style={{ color: '#f59e0b' }}>■</span> 50%+</span>
-          <span><span style={{ color: '#ef4444' }}>■</span> {'<50%'}</span>
         </div>
       </div>
     </div>
@@ -288,7 +435,7 @@ function PatternsTab() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function StatsScreen() {
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState('progression')
   const [selectedDay, setSelectedDay] = useState(null)
 
   return (
@@ -298,7 +445,7 @@ export default function StatsScreen() {
       </div>
 
       <div className="tabs">
-        {[['overview', "Vue d'ensemble"], ['timeline', 'Timeline'], ['patterns', 'Patterns']].map(([key, label]) => (
+        {[['progression', 'Progression'], ['habitudes', 'Habitudes'], ['constance', 'Constance']].map(([key, label]) => (
           <button
             key={key}
             className={`tab-btn ${tab === key ? 'active' : ''}`}
@@ -310,9 +457,9 @@ export default function StatsScreen() {
       </div>
 
       <div className="animate-in" key={tab}>
-        {tab === 'overview' && <OverviewTab />}
-        {tab === 'timeline' && <TimelineTab onDayClick={setSelectedDay} />}
-        {tab === 'patterns' && <PatternsTab />}
+        {tab === 'progression' && <ProgressionTab />}
+        {tab === 'habitudes' && <HabitudesTab onDayClick={setSelectedDay} />}
+        {tab === 'constance' && <ConstanceTab />}
       </div>
 
       {selectedDay && (

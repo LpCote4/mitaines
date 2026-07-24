@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mitaines-v6';
+const CACHE_NAME = 'mitaines-v7';
 const STATIC_ASSETS = ['/mitaines/', '/mitaines/index.html'];
 
 self.addEventListener('install', (event) => {
