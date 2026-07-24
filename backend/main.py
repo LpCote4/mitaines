@@ -30,7 +30,6 @@ PIN_HASH = os.getenv("PIN_HASH", "")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 LAPTOP_GOAL_DAYS = int(os.getenv("LAPTOP_GOAL_DAYS", "90"))
-PINGS_PER_DAY_DEFAULT = int(os.getenv("PINGS_PER_DAY", "5"))
 
 MILESTONE_DEFS = [
     ("first_clean_day", "Premier jour clean"),
@@ -89,10 +88,6 @@ async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
     now_iso = now.isoformat()
 
     checkin_type = data.type
-    if checkin_type != "urge":
-        cutoff = (now - timedelta(minutes=15)).isoformat()
-        if await db.get_latest_ping_since(cutoff):
-            checkin_type = "ping_response"
 
     if data.biting:
         # A bite is always recorded; its penalty is capped to once per day.
@@ -236,19 +231,14 @@ async def get_summary(_=Depends(require_auth)):
     today_str = today.isoformat()
     today_checkins = [c for c in all_checkins if c["timestamp"].startswith(today_str)]
     today_biting = sum(1 for c in today_checkins if c["biting"])
-    today_urges = sum(1 for c in today_checkins if c["type"] == "urge")
-    today_ping_responses = sum(1 for c in today_checkins if c["type"] == "ping_response")
-
-    today_pings = await db.get_pings_for_date(today_str)
+    today_clean = sum(1 for c in today_checkins if not c["biting"])
 
     return {
         "current_streak": current_streak,
         "longest_streak": longest_streak,
         "laptop_goal_days": LAPTOP_GOAL_DAYS,
         "today_biting": today_biting,
-        "today_urges": today_urges,
-        "today_responses": today_ping_responses,
-        "today_pings": len(today_pings),
+        "today_clean": today_clean,
     }
 
 
@@ -259,31 +249,19 @@ async def get_daily_stats(_=Depends(require_auth)):
     checkins = await db.get_checkins_range(start.isoformat(), end.isoformat())
 
     # Build per-day counts
-    by_date = defaultdict(lambda: {"biting": 0, "clean": 0, "urges": 0, "total": 0})
+    by_date = defaultdict(lambda: {"biting": 0, "clean": 0, "total": 0})
     for c in checkins:
         d = c["timestamp"][:10]
         by_date[d]["total"] += 1
         if c["biting"]:
             by_date[d]["biting"] += 1
-        elif c["type"] == "urge":
-            by_date[d]["urges"] += 1
         else:
             by_date[d]["clean"] += 1
-
-    # Get ping counts per day
-    ping_by_date = {}
-    for i in range(30):
-        d = (start + timedelta(days=i)).isoformat()
-        pings = await db.get_pings_for_date(d)
-        ping_by_date[d] = len(pings)
 
     result = []
     for i in range(30):
         d = (start + timedelta(days=i)).isoformat()
-        data = by_date[d]
-        pings_sent = ping_by_date.get(d, 0)
-        coverage = round(data["total"] / pings_sent, 2) if pings_sent > 0 else None
-        result.append({"date": d, **data, "pings_sent": pings_sent, "coverage": coverage})
+        result.append({"date": d, **by_date[d]})
 
     return result
 
@@ -364,9 +342,8 @@ async def get_context_stats(_=Depends(require_auth)):
 @app.get("/api/v1/days/{date_str}")
 async def get_day_detail(date_str: str, _=Depends(require_auth)):
     checkins = await db.get_checkins_for_date(date_str)
-    pings = await db.get_pings_for_date(date_str)
     evening = await db.get_evening(date_str)
-    return {"date": date_str, "checkins": checkins, "pings": pings, "evening": evening}
+    return {"date": date_str, "checkins": checkins, "evening": evening}
 
 
 # ── Insights ──────────────────────────────────────────────────────────────────
@@ -432,37 +409,9 @@ async def unsubscribe_push(data: UnsubscribeRequest, _=Depends(require_auth)):
 
 @app.get("/api/v1/settings")
 async def get_settings(_=Depends(require_auth)):
-    pings_per_day_str = await db.get_setting("pings_per_day")
-    pings_per_day = int(pings_per_day_str) if pings_per_day_str else PINGS_PER_DAY_DEFAULT
     return {
-        "pings_per_day": pings_per_day,
-        "pings_per_day_default": PINGS_PER_DAY_DEFAULT,
         "laptop_goal_days": LAPTOP_GOAL_DAYS,
-        "push_configured": bool(VAPID_PUBLIC_KEY),
     }
-
-
-class SettingsUpdate(BaseModel):
-    pings_per_day: Optional[int] = None
-
-
-@app.patch("/api/v1/settings")
-async def update_settings(data: SettingsUpdate, _=Depends(require_auth)):
-    if data.pings_per_day is not None:
-        if not (1 <= data.pings_per_day <= 20):
-            raise HTTPException(status_code=400, detail="pings_per_day must be between 1 and 20")
-        await db.set_setting("pings_per_day", str(data.pings_per_day))
-        await scheduler_module.schedule_daily_pings()
-    return {"ok": True}
-
-
-# ── Push test ─────────────────────────────────────────────────────────────────
-
-@app.post("/api/v1/push/ping-now")
-async def ping_now(_=Depends(require_auth)):
-    import asyncio
-    asyncio.create_task(scheduler_module.send_real_ping_delayed(5))
-    return {"ok": True, "delay_seconds": 5}
 
 
 # ── Export ────────────────────────────────────────────────────────────────────

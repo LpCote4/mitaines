@@ -376,10 +376,6 @@ function ConstanceTab() {
     ? Math.round((daily.reduce((s, d) => s + (d.total || 0), 0) / Math.max(daysLogged, 1)) * 10) / 10
     : 0
 
-  const trackedDays = daily.filter((d) => d.pings_sent > 0)
-  const goodCoverage = trackedDays.filter((d) => d.coverage !== null && d.coverage >= 0.6)
-  const coveragePct = trackedDays.length ? Math.round((goodCoverage.length / trackedDays.length) * 100) : 0
-
   const cData = last14.map((d) => ({ name: d.date.slice(5), checkins: d.total || 0 }))
 
   return (
@@ -403,29 +399,6 @@ function ConstanceTab() {
         </div>
         <div style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 4 }}>
           Gagner le laptop = se pointer. Chaque check-in compte. 💪
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="section-title">Réponse aux pings</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{
-            width: 56, height: 56, borderRadius: '50%',
-            background: coveragePct >= 60 ? 'var(--success-dim)' : 'var(--warning-dim)',
-            border: `3px solid ${coveragePct >= 60 ? 'var(--success)' : 'var(--warning)'}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--font-head)', fontWeight: 800, fontSize: '1rem',
-          }}>
-            {coveragePct}%
-          </div>
-          <div>
-            <div style={{ fontWeight: 600 }}>
-              {coveragePct >= 60 ? 'Bonne couverture' : 'À améliorer'}
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
-              {goodCoverage.length}/{trackedDays.length} jours avec ≥60% de réponses
-            </div>
-          </div>
         </div>
       </div>
     </div>

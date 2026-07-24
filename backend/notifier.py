@@ -44,27 +44,6 @@ async def _send(title: str, body: str, tags: list[str], priority: str = "default
         logger.error(f"ntfy error: {e}")
 
 
-def _ping_actions() -> list[dict]:
-    return [
-        {
-            "action": "view",
-            "label": "Ouvrir l'app",
-            "url": APP_URL,
-            "clear": True,
-        }
-    ]
-
-
-async def send_ping(pin_hash: str = "") -> None:
-    await _send(
-        title="🧤 Mitaines",
-        body="Est-ce que tu ronges là?",
-        tags=["nail_care"],
-        priority="default",
-        actions=_ping_actions(),
-    )
-
-
 async def send_weekly_summary(biting_count: int, urges_caught: int, worst_context: str | None) -> None:
     if biting_count == 0:
         body = f"Semaine parfaite! 0 rongement. {urges_caught} envies résistées. Incroyable! 🎉"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getSummary, getEconomy, postCheckin, registerPush } from '../api'
+import { getSummary, getEconomy, postCheckin } from '../api'
 import CheckinModal from './CheckinModal'
 import EveningModal from './EveningModal'
 
@@ -59,7 +59,6 @@ export default function HomeScreen() {
   const [economy, setEconomy] = useState(null)
   const [checkinType, setCheckinType] = useState(null)
   const [showEvening, setShowEvening] = useState(false)
-  const [pushState, setPushState] = useState('unknown')
   const [feedbackMsg, setFeedbackMsg] = useState(null)
   const [, setTick] = useState(0)
 
@@ -70,7 +69,6 @@ export default function HomeScreen() {
 
   useEffect(() => {
     load()
-    if ('Notification' in window) setPushState(Notification.permission)
     const t = setInterval(() => setTick((n) => n + 1), 20000) // refresh credit timer
     return () => clearInterval(t)
   }, [])
@@ -101,15 +99,6 @@ export default function HomeScreen() {
     load()
   }
 
-  const handlePushEnable = async () => {
-    const perm = await Notification.requestPermission()
-    setPushState(perm)
-    if (perm === 'granted') {
-      await registerPush()
-      showFeedback('🔔 Notifications activées!')
-    }
-  }
-
   const goal = economy?.goal_days || summary?.laptop_goal_days || 90
   const remaining = economy?.remaining_days ?? goal
   const cagnotte = economy?.cagnotte ?? 0
@@ -127,17 +116,6 @@ export default function HomeScreen() {
           {new Date().toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'short' })}
         </span>
       </div>
-
-      {pushState === 'default' && (
-        <div className="push-banner" onClick={handlePushEnable} role="button">
-          <span style={{ fontSize: '1.5rem' }}>🔔</span>
-          <div className="push-banner-text">
-            <strong>Activer les notifications</strong>
-            <span>Reçois des rappels aléatoires dans la journée</span>
-          </div>
-          <span style={{ color: 'var(--warning)' }}>›</span>
-        </div>
-      )}
 
       {ev && (
         <div style={{

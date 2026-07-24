@@ -191,10 +191,6 @@ export function unsubscribePush(endpoint) {
   return req('DELETE', '/api/v1/push/unsubscribe', { endpoint });
 }
 
-export function pingNow() {
-  return req('POST', '/api/v1/push/ping-now');
-}
-
 export async function registerPush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
 
