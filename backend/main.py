@@ -94,17 +94,24 @@ async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
         if await db.get_latest_ping_since(cutoff):
             checkin_type = "ping_response"
 
-    await db.add_checkin(now_iso, data.biting, data.context, checkin_type)
-    await check_and_unlock_milestones()
-
-    # Economy: biting adds a (per-day-capped) penalty; anything else banks a
-    # rate-limited credit toward the laptop.
     if data.biting:
+        # A bite is always recorded; its penalty is capped to once per day.
+        await db.add_checkin(now_iso, True, data.context, checkin_type)
         econ = await economy_module.apply_bite_penalty(now)
-    else:
-        econ = await economy_module.apply_checkin_credit(now)
+        await check_and_unlock_milestones()
+        return {"ok": True, "recorded": True, "economy": econ}
 
-    return {"ok": True, "economy": econ}
+    # A clean check-in is only "valid" — and only written to the DB — if it earns
+    # a credit, i.e. at least one hour since the last credited check-in. Taps
+    # inside the cooldown are ignored entirely so the check-in count reflects
+    # exactly what was banked.
+    econ = await economy_module.apply_checkin_credit(now)
+    recorded = bool(econ.get("credited"))
+    if recorded:
+        await db.add_checkin(now_iso, False, data.context, checkin_type)
+        await check_and_unlock_milestones()
+
+    return {"ok": True, "recorded": recorded, "economy": econ}
 
 
 @app.get("/api/v1/checkins")
