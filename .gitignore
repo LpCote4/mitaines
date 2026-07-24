@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 node_modules/
 frontend/dist/
+
+# Local DB backups (personal data — never commit)
+backups/
+*.db
