@@ -252,13 +252,18 @@ async def ledger_sum() -> float:
             return float(row[0]) if row else 0.0
 
 
-async def get_last_credit_ts() -> Optional[str]:
+async def get_last_ts_for_reason(reason: str) -> Optional[str]:
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT ts FROM ledger WHERE reason = 'checkin_credit' ORDER BY ts DESC LIMIT 1"
+            "SELECT ts FROM ledger WHERE reason = ? ORDER BY ts DESC LIMIT 1",
+            (reason,),
         ) as cursor:
             row = await cursor.fetchone()
             return row[0] if row else None
+
+
+async def get_last_credit_ts() -> Optional[str]:
+    return await get_last_ts_for_reason("checkin_credit")
 
 
 async def has_ledger_reason_on_date(reason: str, date_str: str) -> bool:

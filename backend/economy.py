@@ -28,6 +28,7 @@ GOAL_DAYS = float(os.getenv("LAPTOP_GOAL_DAYS", "90"))
 CAGNOTTE_TOTAL = float(os.getenv("CAGNOTTE_TOTAL", "3000"))
 CREDIT_PER_CHECKIN = float(os.getenv("CREDIT_PER_CHECKIN", "0.1"))
 CREDIT_COOLDOWN = timedelta(hours=float(os.getenv("CREDIT_COOLDOWN_HOURS", "1")))
+PENALTY_COOLDOWN = timedelta(hours=float(os.getenv("PENALTY_COOLDOWN_HOURS", "1")))
 PENALTY_MIN = float(os.getenv("PENALTY_MIN", "1"))
 PENALTY_MAX = float(os.getenv("PENALTY_MAX", "14"))
 
@@ -143,12 +144,15 @@ async def apply_checkin_credit(now: Optional[datetime] = None) -> dict:
 
 
 async def apply_bite_penalty(now: Optional[datetime] = None) -> dict:
-    """Called on a biting check-in. One penalty per day max."""
+    """Called on a biting check-in. Rate-limited to one penalty per hour,
+    mirroring the clean check-in credit."""
     now = now or datetime.utcnow()
-    today = now.date().isoformat()
-    if await db.has_ledger_reason_on_date("bite_penalty", today):
-        return {"penalized": False, "amount": 0.0, "reason": "already_today",
-                **(await state(now))}
+    last_penalty = await db.get_last_ts_for_reason("bite_penalty")
+    if last_penalty:
+        ready_at = datetime.fromisoformat(last_penalty) + PENALTY_COOLDOWN
+        if now < ready_at:
+            return {"penalized": False, "amount": 0.0, "reason": "cooldown",
+                    "next_penalty_at": ready_at.isoformat() + "Z", **(await state(now))}
 
     remaining = await remaining_days()
     nominal = penalty_for(remaining)

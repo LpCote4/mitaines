@@ -96,6 +96,7 @@ export default function HomeScreen() {
     const ec = applyEconResult(res)
     setCheckinType(null)
     if (ec?.penalized) showFeedback(`😬 Noté — +${ec.amount} jour au compteur`)
+    else if (ec?.reason === 'cooldown') showFeedback('😬 Déjà enregistré cette heure')
     load()
   }
 

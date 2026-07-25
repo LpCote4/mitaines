@@ -90,11 +90,14 @@ async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
     checkin_type = data.type
 
     if data.biting:
-        # A bite is always recorded; its penalty is capped to once per day.
-        await db.add_checkin(now_iso, True, data.context, checkin_type)
+        # A bite is rate-limited to once per hour, like a clean check-in: taps
+        # inside the cooldown are ignored (not recorded, no extra penalty).
         econ = await economy_module.apply_bite_penalty(now)
-        await check_and_unlock_milestones()
-        return {"ok": True, "recorded": True, "economy": econ}
+        recorded = bool(econ.get("penalized"))
+        if recorded:
+            await db.add_checkin(now_iso, True, data.context, checkin_type)
+            await check_and_unlock_milestones()
+        return {"ok": True, "recorded": recorded, "economy": econ}
 
     # A clean check-in is only "valid" — and only written to the DB — if it earns
     # a credit, i.e. at least one hour since the last credited check-in. Taps
