@@ -29,8 +29,8 @@ CAGNOTTE_TOTAL = float(os.getenv("CAGNOTTE_TOTAL", "3000"))
 CREDIT_PER_CHECKIN = float(os.getenv("CREDIT_PER_CHECKIN", "0.1"))
 CREDIT_COOLDOWN = timedelta(hours=float(os.getenv("CREDIT_COOLDOWN_HOURS", "1")))
 PENALTY_COOLDOWN = timedelta(hours=float(os.getenv("PENALTY_COOLDOWN_HOURS", "1")))
-PENALTY_MIN = float(os.getenv("PENALTY_MIN", "1"))
-PENALTY_MAX = float(os.getenv("PENALTY_MAX", "14"))
+PENALTY_MIN = float(os.getenv("PENALTY_MIN", "2"))
+PENALTY_MAX = float(os.getenv("PENALTY_MAX", "28"))
 
 
 # ── Core math ──────────────────────────────────────────────────────────────────
