@@ -44,6 +44,16 @@ async def _send(title: str, body: str, tags: list[str], priority: str = "default
         logger.error(f"ntfy error: {e}")
 
 
+async def send_credit_ready() -> None:
+    await _send(
+        title="🧤 Mitaines",
+        body="💰 Crédit dispo — fais un check-in clean pour engranger!",
+        tags=["moneybag"],
+        priority="default",
+        actions=[{"action": "view", "label": "Ouvrir l'app", "url": APP_URL, "clear": True}],
+    )
+
+
 async def send_weekly_summary(biting_count: int, urges_caught: int, worst_context: str | None) -> None:
     if biting_count == 0:
         body = f"Semaine parfaite! 0 rongement. {urges_caught} envies résistées. Incroyable! 🎉"

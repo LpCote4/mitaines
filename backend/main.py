@@ -47,6 +47,7 @@ MILESTONE_DEFS = [
 async def startup():
     await db.init_db()
     scheduler_module.setup_scheduler()
+    await scheduler_module.schedule_credit_ready_notification()
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ async def create_checkin(data: CheckinCreate, _=Depends(require_auth)):
     if recorded:
         await db.add_checkin(now_iso, False, data.context, checkin_type)
         await check_and_unlock_milestones()
+        await scheduler_module.schedule_credit_ready_notification()
 
     return {"ok": True, "recorded": recorded, "economy": econ}
 
