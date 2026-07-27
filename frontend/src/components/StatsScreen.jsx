@@ -53,7 +53,7 @@ function fmtMoney(v) {
 function buildCagnotteSeries(ledger) {
   const asc = [...ledger].sort((a, b) => a.ts.localeCompare(b.ts))
   let remaining = GOAL_DAYS
-  const series = [{ label: 'Départ', cagnotte: 0 }]
+  const series = [{ label: 'Départ', cagnotte: 0, jours: 0 }]
   for (const row of asc) {
     remaining = Math.max(0, Math.min(GOAL_DAYS, remaining + row.delta))
     const cagnotte = Math.round(CAGNOTTE_TOTAL * ((GOAL_DAYS - remaining) / GOAL_DAYS) * 100) / 100
@@ -62,6 +62,7 @@ function buildCagnotteSeries(ledger) {
       label: d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) +
         ' ' + d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' }),
       cagnotte,
+      jours: Math.round((GOAL_DAYS - remaining) * 10) / 10, // jours engrangés (90 - restants)
       remaining: Math.round(remaining * 10) / 10,
     })
   }
@@ -92,7 +93,7 @@ const CustomTooltip = ({ active, payload, label }) => {
       <div style={{ marginBottom: 4, color: '#94a3b8' }}>{label}</div>
       {payload.map((p) => (
         <div key={p.dataKey} style={{ color: p.color }}>
-          {p.name}: {p.dataKey === 'cagnotte' ? fmtMoney(p.value) : p.value}
+          {p.name}: {p.dataKey === 'cagnotte' ? fmtMoney(p.value) : p.dataKey === 'jours' ? p.value + ' j' : p.value}
         </div>
       ))}
     </div>
@@ -115,6 +116,7 @@ function StatCard({ value, label, color }) {
 function ProgressionTab() {
   const [economy, setEconomy] = useState(null)
   const [ledger, setLedger] = useState([])
+  const [unit, setUnit] = useState('money') // 'money' | 'days'
 
   useEffect(() => {
     getEconomy().then(setEconomy)
@@ -147,7 +149,27 @@ function ProgressionTab() {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="section-title">💰 La cagnotte dans le temps</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div className="section-title" style={{ marginBottom: 0 }}>
+            {unit === 'money' ? '💰 La cagnotte dans le temps' : '📈 Jours engrangés dans le temps'}
+          </div>
+          <div style={{ display: 'flex', gap: 2, background: 'var(--surface, #1a1a28)', borderRadius: 8, padding: 2 }}>
+            {[['money', '$'], ['days', 'jours']].map(([key, lbl]) => (
+              <button
+                key={key}
+                onClick={() => setUnit(key)}
+                style={{
+                  border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: '0.78rem',
+                  cursor: 'pointer', fontWeight: 600,
+                  background: unit === key ? '#10b981' : 'transparent',
+                  color: unit === key ? '#04120c' : 'var(--text-2)',
+                }}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="chart-wrap">
           <ResponsiveContainer width="100%" height={190}>
             <AreaChart data={series} margin={{ top: 4, right: 6, left: -12, bottom: 0 }}>
@@ -158,10 +180,12 @@ function ProgressionTab() {
                 </linearGradient>
               </defs>
               <XAxis dataKey="label" tick={{ fill: '#475569', fontSize: 9 }} interval="preserveEnd" minTickGap={40} />
-              <YAxis tick={{ fill: '#475569', fontSize: 10 }} width={44} tickFormatter={(v) => '$' + v} />
+              <YAxis tick={{ fill: '#475569', fontSize: 10 }} width={44}
+                tickFormatter={(v) => (unit === 'money' ? '$' + v : v + 'j')} />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="cagnotte" stroke="#10b981" strokeWidth={2}
-                fill="url(#cag-grad)" name="Cagnotte" />
+              <Area type="monotone" dataKey={unit === 'money' ? 'cagnotte' : 'jours'}
+                stroke="#10b981" strokeWidth={2} fill="url(#cag-grad)"
+                name={unit === 'money' ? 'Cagnotte' : 'Jours engrangés'} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
