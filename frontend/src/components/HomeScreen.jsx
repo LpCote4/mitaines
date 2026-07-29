@@ -86,7 +86,7 @@ export default function HomeScreen() {
 
   const handleClean = async () => {
     const ec = applyEconResult(await postCheckin(false, null, 'manual'))
-    if (ec?.credited) showFeedback(`💰 +${ec.amount} jour banké!`)
+    if (ec?.credited) showFeedback(`✅ +${ec.amount} jour!`)
     else if (ec?.reason === 'cooldown') showFeedback(`✅ Noté — déjà crédité cette heure`)
     else showFeedback('✅ Noté — clean!')
     load()
@@ -169,7 +169,7 @@ export default function HomeScreen() {
         color: creditReady ? 'var(--urge, #10b981)' : 'var(--text-2)',
       }}>
         {creditReady
-          ? <span>💰 Crédit dispo — un check-in clean rapporte +{economy?.credit_per_checkin ?? 0.1} jour</span>
+          ? <span>Crédit dispo — un check-in clean rapporte +{economy?.credit_per_checkin ?? 0.1} jour</span>
           : <span>⏳ Prochain crédit dans {nextMin} min</span>}
       </div>
 
@@ -177,7 +177,7 @@ export default function HomeScreen() {
         <button className="action-btn clean" onClick={handleClean}>
           <span className="icon">✅</span>
           <span>Clean là</span>
-          <span className="action-btn-sub">{creditReady ? `+${economy?.credit_per_checkin ?? 0.1} 💰` : 'Tap rapide'}</span>
+          <span className="action-btn-sub">{creditReady ? `+${economy?.credit_per_checkin ?? 0.1} j` : 'Tap rapide'}</span>
         </button>
         <button className="action-btn biting" onClick={() => setCheckinType('biting')}>
           <span className="icon">😬</span>

@@ -62,7 +62,7 @@ function buildCagnotteSeries(ledger) {
       label: d.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' }) +
         ' ' + d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit' }),
       cagnotte,
-      jours: Math.round((GOAL_DAYS - remaining) * 10) / 10, // jours engrangés (90 - restants)
+      jours: Math.round((GOAL_DAYS - remaining) * 10) / 10, // jours accumulés (90 - restants)
       remaining: Math.round(remaining * 10) / 10,
     })
   }
@@ -151,7 +151,7 @@ function ProgressionTab() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <div className="section-title" style={{ marginBottom: 0 }}>
-            {unit === 'money' ? '💰 La cagnotte dans le temps' : '📈 Jours engrangés dans le temps'}
+            {unit === 'money' ? 'La cagnotte dans le temps' : '📈 Jours accumulés dans le temps'}
           </div>
           <div style={{ display: 'flex', gap: 2, background: 'var(--surface, #1a1a28)', borderRadius: 8, padding: 2 }}>
             {[['money', '$'], ['days', 'jours']].map(([key, lbl]) => (
@@ -185,7 +185,7 @@ function ProgressionTab() {
               <Tooltip content={<CustomTooltip />} />
               <Area type="monotone" dataKey={unit === 'money' ? 'cagnotte' : 'jours'}
                 stroke="#10b981" strokeWidth={2} fill="url(#cag-grad)"
-                name={unit === 'money' ? 'Cagnotte' : 'Jours engrangés'} />
+                name={unit === 'money' ? 'Cagnotte' : 'Jours accumulés'} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
