@@ -20,7 +20,11 @@ async def _send(title: str, body: str, tags: list[str], priority: str = "default
         logger.warning("NTFY_TOPIC not configured, notification skipped")
         return
 
+    # ntfy renders a structured message only when the JSON is POSTed to the
+    # ROOT url with the topic *inside* the body. POSTing a JSON body to the
+    # topic url instead shows the raw JSON as the message text.
     payload: dict = {
+        "topic": NTFY_TOPIC,
         "title": title,
         "message": body,
         "priority": _PRIORITY_MAP.get(priority, 3),
@@ -32,7 +36,7 @@ async def _send(title: str, body: str, tags: list[str], priority: str = "default
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                f"{NTFY_BASE}/{NTFY_TOPIC}",
+                NTFY_BASE,
                 content=json.dumps(payload).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 timeout=10,
