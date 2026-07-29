@@ -51,8 +51,8 @@ async def _send(title: str, body: str, tags: list[str], priority: str = "default
 async def send_credit_ready() -> None:
     await _send(
         title="🧤 Mitaines",
-        body="💰 Crédit dispo — fais un check-in clean pour engranger!",
-        tags=["moneybag"],
+        body="Crédit dispo — fais un check-in clean!",
+        tags=[],
         priority="default",
         actions=[{"action": "view", "label": "Ouvrir l'app", "url": APP_URL, "clear": True}],
     )
