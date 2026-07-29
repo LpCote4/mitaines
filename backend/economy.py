@@ -29,8 +29,6 @@ CAGNOTTE_TOTAL = float(os.getenv("CAGNOTTE_TOTAL", "3000"))
 CREDIT_PER_CHECKIN = float(os.getenv("CREDIT_PER_CHECKIN", "0.1"))
 CREDIT_COOLDOWN = timedelta(hours=float(os.getenv("CREDIT_COOLDOWN_HOURS", "1")))
 PENALTY_COOLDOWN = timedelta(hours=float(os.getenv("PENALTY_COOLDOWN_HOURS", "1")))
-PENALTY_MIN = float(os.getenv("PENALTY_MIN", "2"))
-PENALTY_MAX = float(os.getenv("PENALTY_MAX", "28"))
 
 
 # ── Core math ──────────────────────────────────────────────────────────────────
@@ -46,10 +44,15 @@ def cagnotte_for(remaining: float) -> float:
 
 
 def penalty_for(remaining: float) -> float:
-    """Bite penalty (days added), bigger the closer you are to the goal."""
-    progress = (GOAL_DAYS - remaining) / GOAL_DAYS if GOAL_DAYS else 0.0
-    progress = max(0.0, min(1.0, progress))
-    return round(PENALTY_MIN + (PENALTY_MAX - PENALTY_MIN) * progress, 2)
+    """Bite penalty (days added), rising steeply as you approach the goal.
+
+    Fitted quadratic on accumulated days x = GOAL_DAYS - remaining (90-day goal):
+    penalty = x**2/450 + (11/15)*x + 1  → ~1 day at the start, ~85 near the
+    finish (0->1, 30->25, 60->53, 90->85). The write-time clamp still keeps
+    `remaining` within [0, GOAL_DAYS] (never below 0 accumulated days).
+    """
+    x = max(0.0, min(GOAL_DAYS, GOAL_DAYS - remaining))
+    return round(x * x / 450.0 + (11.0 / 15.0) * x + 1.0, 2)
 
 
 async def remaining_days() -> float:
