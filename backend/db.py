@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS laptops (
     price_usd REAL,
     build TEXT,
     display TEXT,
+    touch INTEGER,
+    gpu TEXT,
     url TEXT,
     notes TEXT,
     created_at TEXT NOT NULL,
@@ -92,6 +94,12 @@ CREATE INDEX IF NOT EXISTS idx_events_window ON events(starts_at, ends_at);
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(CREATE_TABLES)
+        # Lightweight migrations for columns added after first release.
+        for col, decl in (("touch", "INTEGER"), ("gpu", "TEXT")):
+            try:
+                await db.execute(f"ALTER TABLE laptops ADD COLUMN {col} {decl}")
+            except Exception:
+                pass
         await db.commit()
 
 
@@ -342,7 +350,7 @@ async def get_upcoming_events(now_iso: str, limit: int = 10) -> list:
 # ── Laptops (shopping board) ─────────────────────────────────────────────────
 
 LAPTOP_FIELDS = ("model", "cpu", "passmark", "tdp_w", "ram_gb", "storage_gb",
-                 "price_usd", "build", "display", "url", "notes")
+                 "price_usd", "build", "display", "touch", "gpu", "url", "notes")
 
 
 async def get_laptops() -> list:

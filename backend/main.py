@@ -466,17 +466,21 @@ def _laptop_meta(l: dict) -> dict:
     storage_ok = (l.get("storage_gb") or 0) >= LAPTOP_CRITERIA["min_storage_gb"]
     cpu_ok = (l.get("passmark") or 0) >= LAPTOP_CRITERIA["min_passmark"]
     price_ok = l.get("price_usd") is not None and l["price_usd"] < LAPTOP_CRITERIA["max_price_usd"]
+    no_touch = not bool(l.get("touch"))
     tdp = l.get("tdp_w")
     low_power = tdp is not None and tdp <= LAPTOP_CRITERIA["ideal_tdp_w"]
     # lp's build rating: ★★★ = CNC/unibody or magnesium/CFRP premium assembly.
-    build = l.get("build") or ""
-    build_ok = "★★★" in build
-    meets_core = ram_ok and storage_ok and cpu_ok and price_ok
+    build_ok = "★★★" in (l.get("build") or "")
+    has_dgpu = bool((l.get("gpu") or "").strip())
+    # Hard requirements (incl. no touchscreen); bonuses are separate pluses.
+    specs_ok = ram_ok and storage_ok and cpu_ok and price_ok
+    meets_all = specs_ok and no_touch
     return {
         "ram_ok": ram_ok, "storage_ok": storage_ok, "cpu_ok": cpu_ok,
-        "price_ok": price_ok, "low_power": low_power, "build_ok": build_ok,
-        "meets_core": meets_core, "meets_all": meets_core and low_power and build_ok,
-        "bonus_count": int(low_power) + int(build_ok),
+        "price_ok": price_ok, "no_touch": no_touch,
+        "low_power": low_power, "build_ok": build_ok, "has_dgpu": has_dgpu,
+        "meets_core": specs_ok, "meets_all": meets_all,
+        "bonus_count": int(low_power) + int(build_ok) + int(has_dgpu),
     }
 
 
@@ -485,7 +489,7 @@ async def list_laptops(_=Depends(require_auth)):
     laptops = await db.get_laptops()
     for l in laptops:
         l["criteria"] = _laptop_meta(l)
-    laptops.sort(key=lambda x: (not x["criteria"]["meets_core"],
+    laptops.sort(key=lambda x: (not x["criteria"]["meets_all"],
                                 -x["criteria"]["bonus_count"],
                                 x.get("price_usd") if x.get("price_usd") is not None else 9e9))
     return {"laptops": laptops, "criteria": LAPTOP_CRITERIA}
@@ -501,6 +505,8 @@ class LaptopIn(BaseModel):
     price_usd: Optional[float] = None
     build: Optional[str] = None
     display: Optional[str] = None
+    touch: Optional[bool] = None
+    gpu: Optional[str] = None
     url: Optional[str] = None
     notes: Optional[str] = None
 
@@ -515,6 +521,8 @@ class LaptopPatch(BaseModel):
     price_usd: Optional[float] = None
     build: Optional[str] = None
     display: Optional[str] = None
+    touch: Optional[bool] = None
+    gpu: Optional[str] = None
     url: Optional[str] = None
     notes: Optional[str] = None
 
