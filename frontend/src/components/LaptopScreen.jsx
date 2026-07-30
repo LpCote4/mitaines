@@ -35,7 +35,7 @@ function BonusBadge({ on, label }) {
 
 function LaptopCard({ l }) {
   const c = l.criteria
-  const cad = l.price_usd != null ? Math.round(l.price_usd * USD_TO_CAD) : null
+  const cad = c.price_cad ?? (l.price_usd != null ? Math.round(l.price_usd * USD_TO_CAD) : null)
   const border = c.meets_all ? 'rgba(16,185,129,0.6)'
     : c.meets_core ? 'rgba(124,58,237,0.5)' : 'var(--border)'
 
@@ -47,10 +47,10 @@ function LaptopCard({ l }) {
           <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>{l.cpu}</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontWeight: 800, fontSize: '1.05rem' }}>
-            {l.price_usd != null ? `$${l.price_usd.toLocaleString()} US` : 'N/D'}
+          <div style={{ fontWeight: 800, fontSize: '1.05rem', color: c.price_ok ? undefined : '#ef4444' }}>
+            {cad != null ? `${cad.toLocaleString()} CAD` : 'N/D'}
           </div>
-          {cad != null && <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>≈ {cad.toLocaleString()} CAD</div>}
+          {l.price_usd != null && <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>≈ ${l.price_usd.toLocaleString()} US</div>}
         </div>
       </div>
 
@@ -65,7 +65,7 @@ function LaptopCard({ l }) {
         <Badge ok={c.ram_ok} label={`${l.ram_gb ?? '?'} Go RAM`} />
         <Badge ok={c.storage_ok} label={`${l.storage_gb ? (l.storage_gb / 1000 % 1 === 0 ? l.storage_gb / 1000 + ' To' : l.storage_gb + ' Go') : '?'}`} />
         <Badge ok={c.cpu_ok} label={`PassMark ${l.passmark?.toLocaleString() ?? '?'}`} />
-        <Badge ok={c.price_ok} label={`< $3500`} dimLabel={`$${l.price_usd?.toLocaleString()}`} />
+        <Badge ok={c.price_ok} label={`< 3500 CAD`} dimLabel={cad != null ? `${cad.toLocaleString()} CAD` : 'prix ?'} />
         <Badge ok={c.no_touch} label={'non-tactile'} dimLabel={'écran tactile'} />
         <Badge ok={c.nvidia_ok} label={`🎮 ${l.gpu}`} dimLabel={'pas de GPU NVIDIA'} />
       </div>
@@ -107,7 +107,7 @@ export default function LaptopScreen() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="section-title">Tes critères</div>
         <div style={{ fontSize: '0.85rem', lineHeight: 1.7, color: 'var(--text-2)' }}>
-          <strong>Durs:</strong> RAM ≥ 32 Go (soudée!) · ≥ 1 To · PassMark {'>'} 25 000 · {'<'} 3500 $US · <strong>non-tactile</strong> · <strong>GPU NVIDIA</strong><br />
+          <strong>Durs:</strong> RAM ≥ 32 Go (soudée!) · ≥ 1 To · PassMark {'>'} 25 000 · <strong>{'<'} 3500 $CAD</strong> · <strong>non-tactile</strong> · <strong>GPU NVIDIA</strong><br />
           <span style={{ color: 'var(--text-3)' }}>Bonus (+): 🔋 batterie (TDP ≤28W) · ◆ châssis ★★★</span><br />
           <span style={{ color: 'var(--text-3)' }}>💾 SSD 1 To accepté — swappable vers 2 To pour ~$120 US (~$165 CAD)</span>
         </div>

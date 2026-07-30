@@ -456,7 +456,8 @@ LAPTOP_CRITERIA = {
     "min_ram_gb": 32,
     "min_storage_gb": 1000,
     "min_passmark": 25000,
-    "max_price_usd": 3500,
+    "max_price_cad": 3500,       # budget is in CAD
+    "usd_to_cad": 1.38,          # stored prices are USD; convert for the check
     "ideal_tdp_w": 28,
 }
 
@@ -465,7 +466,9 @@ def _laptop_meta(l: dict) -> dict:
     ram_ok = (l.get("ram_gb") or 0) >= LAPTOP_CRITERIA["min_ram_gb"]
     storage_ok = (l.get("storage_gb") or 0) >= LAPTOP_CRITERIA["min_storage_gb"]
     cpu_ok = (l.get("passmark") or 0) >= LAPTOP_CRITERIA["min_passmark"]
-    price_ok = l.get("price_usd") is not None and l["price_usd"] < LAPTOP_CRITERIA["max_price_usd"]
+    price_cad = (round(l["price_usd"] * LAPTOP_CRITERIA["usd_to_cad"])
+                 if l.get("price_usd") is not None else None)
+    price_ok = price_cad is not None and price_cad < LAPTOP_CRITERIA["max_price_cad"]
     no_touch = not bool(l.get("touch"))
     gpu_str = (l.get("gpu") or "").lower()
     nvidia_ok = any(k in gpu_str for k in ("nvidia", "rtx", "geforce", "gtx"))
@@ -478,7 +481,7 @@ def _laptop_meta(l: dict) -> dict:
     meets_all = specs_ok and no_touch and nvidia_ok
     return {
         "ram_ok": ram_ok, "storage_ok": storage_ok, "cpu_ok": cpu_ok,
-        "price_ok": price_ok, "no_touch": no_touch, "nvidia_ok": nvidia_ok,
+        "price_ok": price_ok, "price_cad": price_cad, "no_touch": no_touch, "nvidia_ok": nvidia_ok,
         "low_power": low_power, "build_ok": build_ok,
         "meets_core": specs_ok, "meets_all": meets_all,
         "bonus_count": int(low_power) + int(build_ok),
