@@ -468,8 +468,9 @@ def _laptop_meta(l: dict) -> dict:
     price_ok = l.get("price_usd") is not None and l["price_usd"] < LAPTOP_CRITERIA["max_price_usd"]
     tdp = l.get("tdp_w")
     low_power = tdp is not None and tdp <= LAPTOP_CRITERIA["ideal_tdp_w"]
-    build = (l.get("build") or "").lower()
-    build_ok = any(k in build for k in ("cnc", "unibody", "usiné", "usine"))
+    # lp's build rating: ★★★ = CNC/unibody or magnesium/CFRP premium assembly.
+    build = l.get("build") or ""
+    build_ok = "★★★" in build
     meets_core = ram_ok and storage_ok and cpu_ok and price_ok
     return {
         "ram_ok": ram_ok, "storage_ok": storage_ok, "cpu_ok": cpu_ok,
