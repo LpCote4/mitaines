@@ -43,22 +43,17 @@ def cagnotte_for(remaining: float) -> float:
     return round(CAGNOTTE_TOTAL * progress, 2)
 
 
-PENALTY_START = float(os.getenv("PENALTY_START", "1"))   # penalty at the start (x=0)
-PENALTY_MAX = float(os.getenv("PENALTY_MAX", "75"))       # penalty at the goal (x=GOAL)
-
-
 def penalty_for(remaining: float) -> float:
     """Bite penalty (days added), rising steeply as you approach the goal.
 
-    Quadratic in accumulated days x = GOAL_DAYS - remaining, normalised u=x/GOAL:
-    penalty = START + (MAX-START) * ((3/14)u^2 + (11/14)u). The (3/14, 11/14)
-    shape matches lp's fitted curve; START=1, MAX=75 → 0->1, 30->22, 60->47,
-    90->75. The write-time clamp still bounds `remaining` to [0, GOAL_DAYS].
+    Cubic (lp's fit) in accumulated days x = GOAL_DAYS - remaining:
+    y = -0.0000610 x^3 + 0.007736 x^2 + 0.6182 x + 1.2138
+    → 0->1.2, 30->25, 60->53, 90->75. Monotonic over [0, 90]. The write-time
+    clamp still bounds `remaining` to [0, GOAL_DAYS] (never below 0 accumulated).
     """
     x = max(0.0, min(GOAL_DAYS, GOAL_DAYS - remaining))
-    u = x / GOAL_DAYS if GOAL_DAYS else 0.0
-    shape = (3.0 / 14.0) * u * u + (11.0 / 14.0) * u
-    return round(PENALTY_START + (PENALTY_MAX - PENALTY_START) * shape, 2)
+    y = -0.0000610 * x ** 3 + 0.007736 * x ** 2 + 0.6182 * x + 1.2138
+    return round(max(0.0, y), 2)
 
 
 async def remaining_days() -> float:
