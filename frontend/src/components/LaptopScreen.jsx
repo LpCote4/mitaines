@@ -57,7 +57,7 @@ function LaptopCard({ l }) {
       {c.meets_all
         ? <div style={{ margin: '8px 0', color: '#10b981', fontWeight: 600, fontSize: '0.85rem' }}>✅ Répond aux critères durs</div>
         : c.meets_core
-          ? <div style={{ margin: '8px 0', color: '#f59e0b', fontWeight: 600, fontSize: '0.85rem' }}>◆ Specs OK — mais écran tactile ✗</div>
+          ? <div style={{ margin: '8px 0', color: '#f59e0b', fontWeight: 600, fontSize: '0.85rem' }}>◆ Specs OK — manque: {[!c.no_touch && 'non-tactile', !c.nvidia_ok && 'GPU NVIDIA'].filter(Boolean).join(', ')}</div>
           : <div style={{ margin: '8px 0', color: 'var(--text-3)', fontWeight: 600, fontSize: '0.85rem' }}>✗ Ne remplit pas les critères durs</div>}
 
       {/* Critères durs */}
@@ -67,13 +67,13 @@ function LaptopCard({ l }) {
         <Badge ok={c.cpu_ok} label={`PassMark ${l.passmark?.toLocaleString() ?? '?'}`} />
         <Badge ok={c.price_ok} label={`< $3500`} dimLabel={`$${l.price_usd?.toLocaleString()}`} />
         <Badge ok={c.no_touch} label={'non-tactile'} dimLabel={'écran tactile'} />
+        <Badge ok={c.nvidia_ok} label={`🎮 ${l.gpu}`} dimLabel={'pas de GPU NVIDIA'} />
       </div>
 
       {/* Bonus (pluses) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
         <BonusBadge on={c.low_power} label={`🔋 batterie (${l.tdp_w ?? '?'}W)`} />
         <BonusBadge on={c.build_ok} label={`◆ ${l.build || 'châssis'}`} />
-        <BonusBadge on={c.has_dgpu} label={c.has_dgpu ? `🎮 ${l.gpu}` : '🎮 pas de GPU dédié'} />
       </div>
 
       {l.notes && <div style={{ fontSize: '0.78rem', color: 'var(--text-2)', marginTop: 8 }}>{l.notes}</div>}
@@ -107,8 +107,8 @@ export default function LaptopScreen() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="section-title">Tes critères</div>
         <div style={{ fontSize: '0.85rem', lineHeight: 1.7, color: 'var(--text-2)' }}>
-          <strong>Durs:</strong> RAM ≥ 32 Go · ≥ 1 To · PassMark {'>'} 25 000 · {'<'} 3500 $US · <strong>non-tactile</strong><br />
-          <span style={{ color: 'var(--text-3)' }}>Bonus (+): 🔋 batterie (TDP ≤28W) · ◆ châssis ★★★ · 🎮 GPU dédié</span>
+          <strong>Durs:</strong> RAM ≥ 32 Go · ≥ 1 To · PassMark {'>'} 25 000 · {'<'} 3500 $US · <strong>non-tactile</strong> · <strong>GPU NVIDIA</strong><br />
+          <span style={{ color: 'var(--text-3)' }}>Bonus (+): 🔋 batterie (TDP ≤28W) · ◆ châssis ★★★</span>
         </div>
         <div style={{ marginTop: 8, fontWeight: 600, color: matches ? '#10b981' : 'var(--text-2)' }}>
           {matches > 0 ? `✅ ${matches} modèle${matches > 1 ? 's' : ''} coche${matches > 1 ? 'nt' : ''} les critères durs` : 'Aucun modèle ne coche les critères durs'}

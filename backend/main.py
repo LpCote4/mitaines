@@ -467,20 +467,21 @@ def _laptop_meta(l: dict) -> dict:
     cpu_ok = (l.get("passmark") or 0) >= LAPTOP_CRITERIA["min_passmark"]
     price_ok = l.get("price_usd") is not None and l["price_usd"] < LAPTOP_CRITERIA["max_price_usd"]
     no_touch = not bool(l.get("touch"))
+    gpu_str = (l.get("gpu") or "").lower()
+    nvidia_ok = any(k in gpu_str for k in ("nvidia", "rtx", "geforce", "gtx"))
     tdp = l.get("tdp_w")
     low_power = tdp is not None and tdp <= LAPTOP_CRITERIA["ideal_tdp_w"]
     # lp's build rating: ★★★ = CNC/unibody or magnesium/CFRP premium assembly.
     build_ok = "★★★" in (l.get("build") or "")
-    has_dgpu = bool((l.get("gpu") or "").strip())
-    # Hard requirements (incl. no touchscreen); bonuses are separate pluses.
+    # Hard requirements (incl. no touchscreen + NVIDIA dGPU); bonuses are pluses.
     specs_ok = ram_ok and storage_ok and cpu_ok and price_ok
-    meets_all = specs_ok and no_touch
+    meets_all = specs_ok and no_touch and nvidia_ok
     return {
         "ram_ok": ram_ok, "storage_ok": storage_ok, "cpu_ok": cpu_ok,
-        "price_ok": price_ok, "no_touch": no_touch,
-        "low_power": low_power, "build_ok": build_ok, "has_dgpu": has_dgpu,
+        "price_ok": price_ok, "no_touch": no_touch, "nvidia_ok": nvidia_ok,
+        "low_power": low_power, "build_ok": build_ok,
         "meets_core": specs_ok, "meets_all": meets_all,
-        "bonus_count": int(low_power) + int(build_ok) + int(has_dgpu),
+        "bonus_count": int(low_power) + int(build_ok),
     }
 
 
