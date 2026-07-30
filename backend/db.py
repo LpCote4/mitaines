@@ -67,6 +67,23 @@ CREATE TABLE IF NOT EXISTS events (
     meta TEXT
 );
 
+CREATE TABLE IF NOT EXISTS laptops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL,
+    cpu TEXT,
+    passmark INTEGER,
+    tdp_w INTEGER,
+    ram_gb INTEGER,
+    storage_gb INTEGER,
+    price_usd REAL,
+    build TEXT,
+    display TEXT,
+    url TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_ledger_reason ON ledger(reason);
 CREATE INDEX IF NOT EXISTS idx_events_window ON events(starts_at, ends_at);
 """
@@ -319,6 +336,55 @@ async def get_upcoming_events(now_iso: str, limit: int = 10) -> list:
         ) as cursor:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
+
+
+
+# ── Laptops (shopping board) ─────────────────────────────────────────────────
+
+LAPTOP_FIELDS = ("model", "cpu", "passmark", "tdp_w", "ram_gb", "storage_gb",
+                 "price_usd", "build", "display", "url", "notes")
+
+
+async def get_laptops() -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM laptops ORDER BY id") as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def add_laptop(data: dict, now: str) -> int:
+    cols = [f for f in LAPTOP_FIELDS if f in data]
+    placeholders = ", ".join("?" for _ in cols)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            f"INSERT INTO laptops ({', '.join(cols)}, created_at, updated_at) "
+            f"VALUES ({placeholders}, ?, ?)",
+            [data[c] for c in cols] + [now, now],
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def update_laptop(laptop_id: int, data: dict, now: str) -> bool:
+    cols = [f for f in LAPTOP_FIELDS if f in data]
+    if not cols:
+        return False
+    assignments = ", ".join(f"{c} = ?" for c in cols)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            f"UPDATE laptops SET {assignments}, updated_at = ? WHERE id = ?",
+            [data[c] for c in cols] + [now, laptop_id],
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def delete_laptop(laptop_id: int) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("DELETE FROM laptops WHERE id = ?", (laptop_id,))
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_setting(key: str) -> Optional[str]:

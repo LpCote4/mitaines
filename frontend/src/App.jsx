@@ -3,6 +3,7 @@ import { getToken } from './api'
 import PinGate from './components/PinGate'
 import HomeScreen from './components/HomeScreen'
 import StatsScreen from './components/StatsScreen'
+import LaptopScreen from './components/LaptopScreen'
 import SettingsScreen from './components/SettingsScreen'
 import MilestoneModal from './components/MilestoneModal'
 import { getMilestones, acknowledgeMilestone } from './api'
@@ -38,6 +39,7 @@ export default function App() {
 
       {screen === 'home' && <HomeScreen />}
       {screen === 'stats' && <StatsScreen />}
+      {screen === 'laptop' && <LaptopScreen />}
       {screen === 'settings' && <SettingsScreen />}
 
       <nav className="bottom-nav">
@@ -48,6 +50,10 @@ export default function App() {
         <button className={`nav-btn ${screen === 'stats' ? 'active' : ''}`} onClick={() => setScreen('stats')}>
           <span>📊</span>
           <span>Stats</span>
+        </button>
+        <button className={`nav-btn ${screen === 'laptop' ? 'active' : ''}`} onClick={() => setScreen('laptop')}>
+          <span>💻</span>
+          <span>Laptop</span>
         </button>
         <button className={`nav-btn ${screen === 'settings' ? 'active' : ''}`} onClick={() => setScreen('settings')}>
           <span>⚙️</span>

@@ -130,6 +130,12 @@ export function getLedger(limit = 50) {
   return req('GET', `/api/v1/economy/ledger?limit=${limit}`);
 }
 
+// ── Laptops ───────────────────────────────────────────────────────────────────
+
+export function getLaptops() {
+  return req('GET', '/api/v1/laptops');
+}
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 export function getSummary() {

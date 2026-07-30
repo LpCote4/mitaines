@@ -450,6 +450,92 @@ async def get_settings(_=Depends(require_auth)):
     }
 
 
+# ── Laptops (shopping board) ─────────────────────────────────────────────────
+
+LAPTOP_CRITERIA = {
+    "min_ram_gb": 32,
+    "min_storage_gb": 1000,
+    "min_passmark": 25000,
+    "max_price_usd": 3500,
+    "ideal_tdp_w": 28,
+}
+
+
+def _laptop_meta(l: dict) -> dict:
+    ram_ok = (l.get("ram_gb") or 0) >= LAPTOP_CRITERIA["min_ram_gb"]
+    storage_ok = (l.get("storage_gb") or 0) >= LAPTOP_CRITERIA["min_storage_gb"]
+    cpu_ok = (l.get("passmark") or 0) >= LAPTOP_CRITERIA["min_passmark"]
+    price_ok = l.get("price_usd") is not None and l["price_usd"] < LAPTOP_CRITERIA["max_price_usd"]
+    tdp = l.get("tdp_w")
+    low_power = tdp is not None and tdp <= LAPTOP_CRITERIA["ideal_tdp_w"]
+    build = (l.get("build") or "").lower()
+    build_ok = any(k in build for k in ("cnc", "unibody", "usiné", "usine"))
+    meets_core = ram_ok and storage_ok and cpu_ok and price_ok
+    return {
+        "ram_ok": ram_ok, "storage_ok": storage_ok, "cpu_ok": cpu_ok,
+        "price_ok": price_ok, "low_power": low_power, "build_ok": build_ok,
+        "meets_core": meets_core, "meets_all": meets_core and low_power and build_ok,
+        "bonus_count": int(low_power) + int(build_ok),
+    }
+
+
+@app.get("/api/v1/laptops")
+async def list_laptops(_=Depends(require_auth)):
+    laptops = await db.get_laptops()
+    for l in laptops:
+        l["criteria"] = _laptop_meta(l)
+    laptops.sort(key=lambda x: (not x["criteria"]["meets_core"],
+                                -x["criteria"]["bonus_count"],
+                                x.get("price_usd") if x.get("price_usd") is not None else 9e9))
+    return {"laptops": laptops, "criteria": LAPTOP_CRITERIA}
+
+
+class LaptopIn(BaseModel):
+    model: str
+    cpu: Optional[str] = None
+    passmark: Optional[int] = None
+    tdp_w: Optional[int] = None
+    ram_gb: Optional[int] = None
+    storage_gb: Optional[int] = None
+    price_usd: Optional[float] = None
+    build: Optional[str] = None
+    display: Optional[str] = None
+    url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class LaptopPatch(BaseModel):
+    model: Optional[str] = None
+    cpu: Optional[str] = None
+    passmark: Optional[int] = None
+    tdp_w: Optional[int] = None
+    ram_gb: Optional[int] = None
+    storage_gb: Optional[int] = None
+    price_usd: Optional[float] = None
+    build: Optional[str] = None
+    display: Optional[str] = None
+    url: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@app.post("/api/v1/admin/laptops")
+async def create_laptop(data: LaptopIn, _=Depends(require_admin)):
+    lid = await db.add_laptop(data.model_dump(exclude_none=True), datetime.utcnow().isoformat())
+    return {"ok": True, "id": lid}
+
+
+@app.patch("/api/v1/admin/laptops/{laptop_id}")
+async def patch_laptop(laptop_id: int, data: LaptopPatch, _=Depends(require_admin)):
+    ok = await db.update_laptop(laptop_id, data.model_dump(exclude_none=True),
+                                datetime.utcnow().isoformat())
+    return {"ok": ok}
+
+
+@app.delete("/api/v1/admin/laptops/{laptop_id}")
+async def remove_laptop(laptop_id: int, _=Depends(require_admin)):
+    return {"ok": await db.delete_laptop(laptop_id)}
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/export")
