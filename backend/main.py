@@ -1,8 +1,9 @@
 import logging
 import os
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,30 @@ import scheduler as scheduler_module
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Day/hour aggregations use the user's local timezone (Montréal by default) so
+# a check-in at 9pm local doesn't roll into the next (UTC) day. Timestamps are
+# still stored as UTC.
+APP_TZ = ZoneInfo(os.getenv("APP_TZ", "America/Toronto"))
+
+
+def _to_local(ts_iso: str) -> datetime:
+    dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(APP_TZ)
+
+
+def _local_date(ts_iso: str) -> str:
+    return _to_local(ts_iso).date().isoformat()
+
+
+def _local_hour(ts_iso: str) -> int:
+    return _to_local(ts_iso).hour
+
+
+def _today_local() -> date:
+    return datetime.now(APP_TZ).date()
 
 app = FastAPI(title="Mitaines API", version="2.0")
 
@@ -210,7 +235,7 @@ class EveningCreate(BaseModel):
 
 @app.post("/api/v1/evenings")
 async def create_evening(data: EveningCreate, _=Depends(require_auth)):
-    today = date.today().isoformat()
+    today = _today_local().isoformat()
     await db.upsert_evening(today, data.intensity, data.context, data.note)
     return {"ok": True}
 
@@ -227,14 +252,14 @@ async def get_evening(date_str: str, _=Depends(require_auth)):
 
 @app.get("/api/v1/stats/summary")
 async def get_summary(_=Depends(require_auth)):
-    today = date.today()
+    today = _today_local()
     all_checkins = await db.get_all_checkins()
 
     current_streak = compute_current_streak(all_checkins, today)
     longest_streak = compute_longest_streak(all_checkins)
 
     today_str = today.isoformat()
-    today_checkins = [c for c in all_checkins if c["timestamp"].startswith(today_str)]
+    today_checkins = [c for c in all_checkins if _local_date(c["timestamp"]) == today_str]
     today_biting = sum(1 for c in today_checkins if c["biting"])
     today_clean = sum(1 for c in today_checkins if not c["biting"])
 
@@ -249,14 +274,16 @@ async def get_summary(_=Depends(require_auth)):
 
 @app.get("/api/v1/stats/daily")
 async def get_daily_stats(_=Depends(require_auth)):
-    end = date.today()
+    end = _today_local()
     start = end - timedelta(days=29)
-    checkins = await db.get_checkins_range(start.isoformat(), end.isoformat())
+    # Fetch a day wider each side so local-day grouping isn't truncated at edges.
+    checkins = await db.get_checkins_range(
+        (start - timedelta(days=1)).isoformat(), (end + timedelta(days=1)).isoformat())
 
-    # Build per-day counts
+    # Build per-day counts (local day)
     by_date = defaultdict(lambda: {"biting": 0, "clean": 0, "total": 0})
     for c in checkins:
-        d = c["timestamp"][:10]
+        d = _local_date(c["timestamp"])
         by_date[d]["total"] += 1
         if c["biting"]:
             by_date[d]["biting"] += 1
@@ -273,13 +300,14 @@ async def get_daily_stats(_=Depends(require_auth)):
 
 @app.get("/api/v1/stats/heatmap")
 async def get_heatmap(_=Depends(require_auth)):
-    end = date.today()
+    end = _today_local()
     start = end - timedelta(days=34)
-    checkins = await db.get_checkins_range(start.isoformat(), end.isoformat())
+    checkins = await db.get_checkins_range(
+        (start - timedelta(days=1)).isoformat(), (end + timedelta(days=1)).isoformat())
 
     by_date = defaultdict(lambda: {"biting": 0, "total": 0})
     for c in checkins:
-        d = c["timestamp"][:10]
+        d = _local_date(c["timestamp"])
         by_date[d]["total"] += 1
         if c["biting"]:
             by_date[d]["biting"] += 1
@@ -302,7 +330,7 @@ async def get_heatmap(_=Depends(require_auth)):
 
 @app.get("/api/v1/stats/hourly")
 async def get_hourly_stats(_=Depends(require_auth)):
-    end = date.today()
+    end = _today_local()
     start = end - timedelta(days=30)
     checkins = await db.get_checkins_range(start.isoformat(), end.isoformat())
 
@@ -310,7 +338,7 @@ async def get_hourly_stats(_=Depends(require_auth)):
     hour_total = defaultdict(int)
     for c in checkins:
         try:
-            hour = int(c["timestamp"][11:13])
+            hour = _local_hour(c["timestamp"])
             hour_total[hour] += 1
             if c["biting"]:
                 hour_biting[hour] += 1
@@ -346,7 +374,10 @@ async def get_context_stats(_=Depends(require_auth)):
 
 @app.get("/api/v1/days/{date_str}")
 async def get_day_detail(date_str: str, _=Depends(require_auth)):
-    checkins = await db.get_checkins_for_date(date_str)
+    d = date.fromisoformat(date_str)
+    window = await db.get_checkins_range(
+        (d - timedelta(days=1)).isoformat(), (d + timedelta(days=1)).isoformat())
+    checkins = [c for c in window if _local_date(c["timestamp"]) == date_str]
     evening = await db.get_evening(date_str)
     return {"date": date_str, "checkins": checkins, "evening": evening}
 
@@ -438,8 +469,8 @@ async def export_data(_=Depends(require_auth)):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def compute_current_streak(checkins: list, today: date) -> int:
-    dates_with_checkin = {c["timestamp"][:10] for c in checkins}
-    biting_dates = {c["timestamp"][:10] for c in checkins if c["biting"]}
+    dates_with_checkin = {_local_date(c["timestamp"]) for c in checkins}
+    biting_dates = {_local_date(c["timestamp"]) for c in checkins if c["biting"]}
 
     streak = 0
     d = today
@@ -461,8 +492,8 @@ def compute_longest_streak(checkins: list) -> int:
     if not checkins:
         return 0
 
-    dates_with_checkin = {c["timestamp"][:10] for c in checkins}
-    biting_dates = {c["timestamp"][:10] for c in checkins if c["biting"]}
+    dates_with_checkin = {_local_date(c["timestamp"]) for c in checkins}
+    biting_dates = {_local_date(c["timestamp"]) for c in checkins if c["biting"]}
     clean_dates = sorted(dates_with_checkin - biting_dates)
 
     if not clean_dates:
