@@ -54,6 +54,14 @@ function minutesUntil(iso) {
   return Math.max(0, Math.ceil(diff / 60000))
 }
 
+function formatRemaining(iso) {
+  const m = minutesUntil(iso)
+  if (m <= 0) return 'terminé'
+  const h = Math.floor(m / 60)
+  const min = m % 60
+  return h > 0 ? `${h}h ${min}min` : `${min}min`
+}
+
 export default function HomeScreen() {
   const [summary, setSummary] = useState(null)
   const [economy, setEconomy] = useState(null)
@@ -129,7 +137,7 @@ export default function HomeScreen() {
           <div style={{ flex: 1 }}>
             <strong style={{ display: 'block' }}>{ev.label}</strong>
             <span style={{ fontSize: '0.82rem', color: 'var(--text-2)' }}>
-              Check-ins x{ev.multiplier} en ce moment!
+              Check-ins x{ev.multiplier} · ⏳ se termine dans {formatRemaining(ev.ends_at)}
             </span>
           </div>
         </div>
