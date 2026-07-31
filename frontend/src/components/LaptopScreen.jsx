@@ -89,19 +89,23 @@ function LaptopCard({ l }) {
 
 export default function LaptopScreen() {
   const [data, setData] = useState(null)
+  const [showExcluded, setShowExcluded] = useState(false)
 
   useEffect(() => { getLaptops().then(setData) }, [])
 
   if (!data) return <div className="screen"><div className="loading">Chargement…</div></div>
 
-  const laptops = data.laptops || []
-  const matches = laptops.filter((l) => l.criteria.meets_all).length
+  const all = data.laptops || []
+  // Touch OR no NVIDIA GPU = hard no → kept out of the main list.
+  const viable = all.filter((l) => l.criteria.no_touch && l.criteria.nvidia_ok)
+  const excluded = all.filter((l) => !(l.criteria.no_touch && l.criteria.nvidia_ok))
+  const matches = viable.filter((l) => l.criteria.meets_all).length
 
   return (
     <div className="screen">
       <div className="home-header">
         <h1>💻 Laptop</h1>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>{laptops.length} modèles</span>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>{viable.length} candidats</span>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -116,11 +120,31 @@ export default function LaptopScreen() {
         </div>
       </div>
 
-      {laptops.map((l) => <LaptopCard key={l.id} l={l} />)}
+      {viable.map((l) => <LaptopCard key={l.id} l={l} />)}
 
-      {laptops.length === 0 && (
+      {viable.length === 0 && (
         <div style={{ color: 'var(--text-2)', fontSize: '0.9rem', textAlign: 'center', marginTop: 20 }}>
-          Aucun modèle pour l'instant. Je vais en ajouter au fil de mes recherches.
+          Aucun candidat non-tactile avec GPU NVIDIA pour l'instant.
+        </div>
+      )}
+
+      {excluded.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <button
+            onClick={() => setShowExcluded((v) => !v)}
+            style={{
+              width: '100%', border: '1px solid var(--border)', background: 'transparent',
+              color: 'var(--text-3)', borderRadius: 'var(--radius-sm)', padding: '10px',
+              fontSize: '0.82rem', cursor: 'pointer',
+            }}
+          >
+            {showExcluded ? '▾' : '▸'} {excluded.length} exclus (écran tactile ou sans GPU NVIDIA — hard no)
+          </button>
+          {showExcluded && (
+            <div style={{ marginTop: 10, opacity: 0.6 }}>
+              {excluded.map((l) => <LaptopCard key={l.id} l={l} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
