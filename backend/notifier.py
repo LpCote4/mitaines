@@ -58,6 +58,17 @@ async def send_credit_ready() -> None:
     )
 
 
+async def send_credit_reminder(hours: int) -> None:
+    since = f"{hours}h" if hours < 24 else f"{hours // 24}j"
+    await _send(
+        title="🧤 Mitaines",
+        body=f"Ça fait {since} — ton crédit t'attend toujours. Un check-in clean te fait avancer!",
+        tags=[],
+        priority="default",
+        actions=[{"action": "view", "label": "Ouvrir l'app", "url": APP_URL, "clear": True}],
+    )
+
+
 async def send_weekly_summary(biting_count: int, urges_caught: int, worst_context: str | None) -> None:
     if biting_count == 0:
         body = f"Semaine parfaite! 0 rongement. {urges_caught} envies résistées. Incroyable! 🎉"
