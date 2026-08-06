@@ -48,7 +48,8 @@ async def schedule_credit_reminders():
         if run_at <= now:
             continue
         scheduler.add_job(send_credit_reminder, "date", run_date=run_at,
-                          id=f"{REMINDER_JOB_PREFIX}{h}", args=[h])
+                          id=f"{REMINDER_JOB_PREFIX}{h}", args=[h],
+                          replace_existing=True)
         scheduled.append(h)
     logger.info(f"Credit reminders scheduled at +{scheduled}h from {base.isoformat()}")
 
@@ -58,13 +59,21 @@ schedule_credit_ready_notification = schedule_credit_reminders
 
 
 async def send_credit_reminder(hours: int):
-    # A credited check-in cancels+reschedules all reminder jobs, so a job that
-    # actually fires is never stale.
+    last = await db.get_last_credit_ts()
+    if not last:
+        return
+    elapsed_h = (datetime.utcnow() - datetime.fromisoformat(last)).total_seconds() / 3600
+    # If a more recent credited check-in happened, this scheduled offset is stale
+    # (a newer reminder chain took over) — skip so we never show a wrong elapsed.
+    if elapsed_h < hours - 0.25:
+        logger.info(f"Skip stale reminder (+{hours}h; only {elapsed_h:.2f}h since last credit)")
+        return
     if hours <= 1:
         await notifier.send_credit_ready()
     else:
-        await notifier.send_credit_reminder(hours)
-    logger.info(f"Credit reminder sent (+{hours}h)")
+        # Message uses the *actual* elapsed time, not the scheduled offset.
+        await notifier.send_credit_reminder(round(elapsed_h))
+    logger.info(f"Credit reminder sent (~{elapsed_h:.1f}h since last credit)")
 
 
 async def send_weekly_summary():
