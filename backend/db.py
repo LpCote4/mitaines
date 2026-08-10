@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS events (
     meta TEXT
 );
 
+CREATE TABLE IF NOT EXISTS reminder_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    offset_h INTEGER,
+    elapsed_h REAL,
+    last_credit_ts TEXT,
+    scheduled_for TEXT,
+    sent_at TEXT NOT NULL,
+    outcome TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS laptops (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     model TEXT NOT NULL,
@@ -101,6 +112,28 @@ async def init_db():
             except Exception:
                 pass
         await db.commit()
+
+
+async def log_reminder(kind: str, sent_at: str, outcome: str, offset_h: Optional[int] = None,
+                        elapsed_h: Optional[float] = None, last_credit_ts: Optional[str] = None,
+                        scheduled_for: Optional[str] = None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO reminder_log (kind, offset_h, elapsed_h, last_credit_ts, scheduled_for, sent_at, outcome) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (kind, offset_h, elapsed_h, last_credit_ts, scheduled_for, sent_at, outcome),
+        )
+        await db.commit()
+
+
+async def get_reminder_log(limit: int = 100) -> list:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM reminder_log ORDER BY sent_at DESC LIMIT ?", (limit,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
 
 
 async def add_checkin(timestamp: str, biting: bool, context: Optional[str], checkin_type: str):

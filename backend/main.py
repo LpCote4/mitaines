@@ -165,6 +165,11 @@ async def get_ledger(limit: int = 100, _=Depends(require_auth)):
     return await db.get_ledger(limit)
 
 
+@app.get("/api/v1/admin/reminder-log")
+async def get_reminder_log(limit: int = 100, _=Depends(require_admin)):
+    return await db.get_reminder_log(limit)
+
+
 @app.get("/api/v1/events/active")
 async def get_active_event(_=Depends(require_auth)):
     return {"active": await economy_module.active_event()}

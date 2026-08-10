@@ -1,5 +1,7 @@
 import logging
-from datetime import datetime, timedelta
+import os
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -19,6 +21,28 @@ scheduler = AsyncIOScheduler()
 # reschedules the whole series from scratch.
 REMINDER_OFFSETS_H = [1, 2, 4, 8, 16, 32, 64, 128]
 REMINDER_JOB_PREFIX = "credit_reminder_"
+
+APP_TZ = ZoneInfo(os.getenv("APP_TZ", "America/Toronto"))
+# Never push a notification while lp is presumably asleep. A reminder that
+# would land in this local window gets deferred to the end of it instead of
+# firing at 1am/3am/7am, which is what made the escalating series feel random.
+QUIET_HOURS_START = 23  # 23:00 local
+QUIET_HOURS_END = 8     # 08:00 local
+
+
+def _defer_past_quiet_hours(run_at_utc: datetime) -> datetime:
+    """run_at_utc is naive, representing UTC (this codebase's convention).
+    Returns a naive UTC datetime, pushed to QUIET_HOURS_END local time if it
+    landed inside the quiet window."""
+    aware_utc = run_at_utc.replace(tzinfo=timezone.utc)
+    local = aware_utc.astimezone(APP_TZ)
+    in_quiet = local.hour >= QUIET_HOURS_START or local.hour < QUIET_HOURS_END
+    if not in_quiet:
+        return run_at_utc
+    wake = local.replace(hour=QUIET_HOURS_END, minute=0, second=0, microsecond=0)
+    if local.hour >= QUIET_HOURS_START:
+        wake += timedelta(days=1)
+    return wake.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def setup_scheduler():
@@ -42,31 +66,43 @@ async def schedule_credit_reminders():
         return
     base = datetime.fromisoformat(last)
     now = datetime.utcnow()
-    scheduled = []
+    # Several offsets can get deferred onto the same post-quiet-hours wake time
+    # (e.g. +1h/+2h/+4h/+8h overnight all land at 8am). Firing all of them back
+    # to back would just be a different flavor of spam, so keep only the
+    # largest (most accurate) offset per distinct run time.
+    slots: dict[datetime, int] = {}
     for h in REMINDER_OFFSETS_H:
-        run_at = base + timedelta(hours=h)
+        run_at = _defer_past_quiet_hours(base + timedelta(hours=h))
         if run_at <= now:
             continue
+        if run_at not in slots or h > slots[run_at]:
+            slots[run_at] = h
+    scheduled = []
+    for run_at, h in sorted(slots.items()):
         scheduler.add_job(send_credit_reminder, "date", run_date=run_at,
-                          id=f"{REMINDER_JOB_PREFIX}{h}", args=[h],
+                          id=f"{REMINDER_JOB_PREFIX}{h}", args=[h, run_at.isoformat()],
                           replace_existing=True)
-        scheduled.append(h)
-    logger.info(f"Credit reminders scheduled at +{scheduled}h from {base.isoformat()}")
+        scheduled.append((h, run_at.isoformat()))
+    logger.info(f"Credit reminders scheduled at {scheduled} from {base.isoformat()}")
 
 
 # Backwards-compatible alias (main.py may call either name).
 schedule_credit_ready_notification = schedule_credit_reminders
 
 
-async def send_credit_reminder(hours: int):
+async def send_credit_reminder(hours: int, scheduled_for: str | None = None):
+    now = datetime.utcnow()
     last = await db.get_last_credit_ts()
     if not last:
         return
-    elapsed_h = (datetime.utcnow() - datetime.fromisoformat(last)).total_seconds() / 3600
+    elapsed_h = (now - datetime.fromisoformat(last)).total_seconds() / 3600
     # If a more recent credited check-in happened, this scheduled offset is stale
     # (a newer reminder chain took over) — skip so we never show a wrong elapsed.
     if elapsed_h < hours - 0.25:
         logger.info(f"Skip stale reminder (+{hours}h; only {elapsed_h:.2f}h since last credit)")
+        await db.log_reminder("credit_reminder", now.isoformat(), "skipped_stale",
+                               offset_h=hours, elapsed_h=elapsed_h, last_credit_ts=last,
+                               scheduled_for=scheduled_for)
         return
     if hours <= 1:
         await notifier.send_credit_ready()
@@ -74,6 +110,9 @@ async def send_credit_reminder(hours: int):
         # Message uses the *actual* elapsed time, not the scheduled offset.
         await notifier.send_credit_reminder(round(elapsed_h))
     logger.info(f"Credit reminder sent (~{elapsed_h:.1f}h since last credit)")
+    await db.log_reminder("credit_reminder", now.isoformat(), "sent",
+                           offset_h=hours, elapsed_h=elapsed_h, last_credit_ts=last,
+                           scheduled_for=scheduled_for)
 
 
 async def send_weekly_summary():
