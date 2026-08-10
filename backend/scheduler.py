@@ -1,7 +1,5 @@
 import logging
-import os
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -21,28 +19,6 @@ scheduler = AsyncIOScheduler()
 # reschedules the whole series from scratch.
 REMINDER_OFFSETS_H = [1, 2, 4, 8, 16, 32, 64, 128]
 REMINDER_JOB_PREFIX = "credit_reminder_"
-
-APP_TZ = ZoneInfo(os.getenv("APP_TZ", "America/Toronto"))
-# Never push a notification while lp is presumably asleep. A reminder that
-# would land in this local window gets deferred to the end of it instead of
-# firing at 1am/3am/7am, which is what made the escalating series feel random.
-QUIET_HOURS_START = 23  # 23:00 local
-QUIET_HOURS_END = 8     # 08:00 local
-
-
-def _defer_past_quiet_hours(run_at_utc: datetime) -> datetime:
-    """run_at_utc is naive, representing UTC (this codebase's convention).
-    Returns a naive UTC datetime, pushed to QUIET_HOURS_END local time if it
-    landed inside the quiet window."""
-    aware_utc = run_at_utc.replace(tzinfo=timezone.utc)
-    local = aware_utc.astimezone(APP_TZ)
-    in_quiet = local.hour >= QUIET_HOURS_START or local.hour < QUIET_HOURS_END
-    if not in_quiet:
-        return run_at_utc
-    wake = local.replace(hour=QUIET_HOURS_END, minute=0, second=0, microsecond=0)
-    if local.hour >= QUIET_HOURS_START:
-        wake += timedelta(days=1)
-    return wake.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def setup_scheduler():
@@ -66,19 +42,11 @@ async def schedule_credit_reminders():
         return
     base = datetime.fromisoformat(last)
     now = datetime.utcnow()
-    # Several offsets can get deferred onto the same post-quiet-hours wake time
-    # (e.g. +1h/+2h/+4h/+8h overnight all land at 8am). Firing all of them back
-    # to back would just be a different flavor of spam, so keep only the
-    # largest (most accurate) offset per distinct run time.
-    slots: dict[datetime, int] = {}
+    scheduled = []
     for h in REMINDER_OFFSETS_H:
-        run_at = _defer_past_quiet_hours(base + timedelta(hours=h))
+        run_at = base + timedelta(hours=h)
         if run_at <= now:
             continue
-        if run_at not in slots or h > slots[run_at]:
-            slots[run_at] = h
-    scheduled = []
-    for run_at, h in sorted(slots.items()):
         scheduler.add_job(send_credit_reminder, "date", run_date=run_at,
                           id=f"{REMINDER_JOB_PREFIX}{h}", args=[h, run_at.isoformat()],
                           replace_existing=True)
